@@ -1,30 +1,33 @@
-name: Bug report
-description: The viewer, the pipeline or a tool does not behave as expected
+name: Bug report / 缺陷报告
+description: The viewer, the pipeline or a tool does not behave as expected / 查看器、流水线或工具的行为不符合预期
 title: "bug: "
 labels: ["bug"]
 body:
   - type: markdown
     attributes:
-      value: Please do not paste tokens, keys or personal details. For a wrong variation, comment or evaluation use the content issue form instead.
+      value: |
+        Please do not paste tokens, keys or personal details. For a wrong variation, comment or evaluation use the content issue form instead.
+
+        请不要贴令牌、密钥或个人信息。如果是变化图、讲解或评估有误,请改用"内容问题"表单。
   - type: textarea
     id: what
     attributes:
-      label: What happened and what did you expect
+      label: What happened and what did you expect / 发生了什么,你期望的是什么
     validations:
       required: true
   - type: textarea
     id: steps
     attributes:
-      label: Steps to reproduce
+      label: Steps to reproduce / 复现步骤
       placeholder: |
-        1. Open index.html and pick ...
-        2. Press the right arrow until move N
+        1. Open index.html and pick ... / 打开 index.html,选择 ...
+        2. Press the right arrow until move N / 按右方向键走到第 N 手
     validations:
       required: true
   - type: input
     id: env
     attributes:
-      label: Browser and system
-      description: Also the viewer version and data time shown at the top left of the page.
+      label: Browser and system / 浏览器和系统
+      description: Also the viewer version and data time shown at the top left of the page. / 另外请附上页面左上角显示的界面版本和数据时间。
     validations:
       required: true
