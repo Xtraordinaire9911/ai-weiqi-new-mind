@@ -2,7 +2,7 @@
 // Rules: same-origin GET requests only. Anything cross-origin (bilibili links are opened by the user, the engine bridge is called by engine_net.js)
 // is never touched, never cached and never answered from here. The cache name follows the visible interface version (VIEWER_VER in index.html).
 'use strict';
-const VER = '4.6';
+const VER = '4.7';
 const CACHE = 'joseki-shell-v' + VER;
 const SHELL = ['./', 'index.html', 'mobile.js', 'pwa.js', 'engine_core.js', 'engine_net.js', 'engine_panel.js', 'quiz_core.js', 'quiz.js',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png', 'data/library.js'];
