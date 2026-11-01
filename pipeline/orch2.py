@@ -2,6 +2,7 @@
 import json,os,sys,subprocess,glob,re,threading,time,traceback
 from concurrent.futures import ThreadPoolExecutor
 from treesync import tree_fingerprint,check_analysis,check_kp,kp_ident,USABLE
+import sgfcheck
 from wqutil import atomic_write_json,atomic_write_text,read_json,find_ffmpeg,setup_stdio,utf8_env,Log   # atomic outputs: a kill mid-write must not leave partial files
 # Dirs come from env vars when set (tests, another machine); the defaults are the original Windows paths.
 HERE=os.path.dirname(os.path.abspath(__file__))   # sibling scripts (tr.py, board.py, analyze2.py) are looked up here, not in a hard coded dir
@@ -94,8 +95,11 @@ def fix(t):
     return t.replace('拖延','@@').replace('拖','托').replace('@@','拖延')
 def mm(vi,t):return '@%d|%d:%02d'%(vi,t//60,t%60)
 def esc(s):return s.replace('\\','\\\\').replace(']','\\]')
+def clean_cands(cs):   # keep candidates whose move is a board coordinate; 'pass' or garbage would put an invalid entry into AN[]
+    return [dict(m,pv=[x for x in m['pv'] if sgfcheck.GTP.fullmatch(x)]) for m in cs if sgfcheck.GTP.fullmatch(m['m'])]
 DUMP=[]
 def merge(N,A,vids,name,summ='',KP={}):
+    DUMP.clear()   # a failed merge of an earlier group must not leak its nodes into this group's kpin dump
     T=[read_json(os.path.join(D(i),'t.json')) for i in vids]
     IV=sorted((a,b,k,vi) for k,n in enumerate(N) if not n['dead'] for a,b,vi in n['v'])
     SEG={}
@@ -119,7 +123,9 @@ def merge(N,A,vids,name,summ='',KP={}):
     def ai(k):
         a=A.get('%d'%k)
         if not a or 'cand' not in a:return '',''
-        c0=a['cand'];srch=[m for m in c0 if not m.get('f')];tv=max([m['v'] for m in srch] or [1])
+        c0=clean_cands(a['cand'])
+        if not c0:return '',''
+        srch=[m for m in c0 if not m.get('f')];tv=max([m['v'] for m in srch] or [1])
         c=[m for m in c0 if m.get('f') or m['v']>=max(5,.08*tv)] or c0[:1]
         best=max(c,key=lambda m:m['s']);c=sorted(c,key=lambda m:-m['s']);ls=[]
         def cs(m):return "⟨%s⟩%s"%(m['m'],"最优" if m is best else "%+.1f目"%(m['s']-best['s']))+("(老师走的)" if m.get('f') else "")
@@ -162,7 +168,7 @@ def merge(N,A,vids,name,summ='',KP={}):
         ch=live(k)
         if len(ch)==1:return s+node(ch[0])
         return s+''.join('('+node(c)+')' for c in ch)
-    return '(;GM[1]FF[4]CA[UTF-8]SZ[19]KM[6.5]GN[%s]PC[陈林涛 %s]%s)'%(name,' '.join(vid[i]['bvid'] for i in vids),node(0))
+    return '(;GM[1]FF[4]CA[UTF-8]SZ[19]KM[6.5]GN[%s]PC[%s]%s)'%(esc(name),esc((PLAN.get('name') or SOURCE)+' '+' '.join(vid[i]['bvid'] for i in vids)),node(0))   # GN/PC are escaped like every other text value
 # ---- 阶段B: 分组 ----
 def sgf_path(name):   # data/sgf/<uploader>/<series>/<group>.sgf; the series folder name comes from plan.json
     return os.path.join(PROJ,'data','sgf',SOURCE,PLAN['series'][str(SEASON)],name+'.sgf')
@@ -173,8 +179,19 @@ def groups():
         if any(x>MAXIDX for x in idxs):continue
         out.append((name,idxs))
     return out
+def write_sgf(path,sgf,force=False):
+    """Write sgf unless it is invalid or poorer than the file already there (fewer nodes, less AI data or notes). Returns (written, reasons)."""
+    bad=sgfcheck.validate(sgf)
+    if bad:return False,['new sgf is invalid: '+'; '.join(bad[:3])]
+    if not os.path.isdir(os.path.dirname(path)):return False,['target folder does not exist: '+os.path.dirname(path)]   # a wrong path must not create stray files
+    if os.path.exists(path) and not force:
+        with open(path,encoding='utf-8-sig') as f:old=f.read()
+        if not sgfcheck.validate(old):   # a damaged old file may be replaced, a good one only by an equal or richer one
+            why=sgfcheck.worse(sgfcheck.metrics(sgf),sgfcheck.metrics(old))
+            if why:return False,['would lose data: '+', '.join(why)]
+    atomic_write_text(path,sgf);return True,[]
 def safe_name(name):return re.sub(r'[\\/:*?"<>|]','',name)   # group name -> file name part
-def stageB(name,idxs,visits=150):
+def stageB(name,idxs,visits=150,force=False):
     safe=safe_name(name);base=os.path.join(W,'g_'+safe)
     rep={'group':name,'videos':list(idxs),'time':time.strftime('%Y-%m-%d %H:%M:%S')}   # one status record per group, see status_<group>.json
     N=build_tree(idxs);fp=tree_fingerprint(N);atomic_write_json(base+'.n.json',N)
@@ -203,9 +220,13 @@ def stageB(name,idxs,visits=150):
     sgf=merge(N,A,idxs,name,summ,KP)
     atomic_write_json(os.path.join(W,'kpin_'+safe+'.json'),DUMP[:],ensure_ascii=False);DUMP.clear()
     atomic_write_json(side,kp_ident(N))   # which tree this kpin dump describes (used to place the kp notes written from it)
-    atomic_write_text(sgf_path(name),sgf)
+    done,why=write_sgf(sgf_path(name),sgf,force=force or bool(os.environ.get('WEIQI_FORCE')))
+    if not done:   # keep the candidate so the work is not lost, and say loudly why the old file stays
+        os.makedirs(os.path.join(W,'rejected'),exist_ok=True);atomic_write_text(os.path.join(W,'rejected',safe+'.sgf'),sgf)
+        log('B REFUSED',name,'; '.join(why),'| existing SGF kept, candidate saved in',os.path.join(W,'rejected'),'| WEIQI_FORCE=1 overrides')
+    rep['sgf']=dict(sgfcheck.metrics(sgf),written=done,reasons=why)
     atomic_write_json(os.path.join(W,'status_'+safe+'.json'),rep,ensure_ascii=False,indent=1)
-    log('B done',name,rep['nodes'],'nodes',len(sgf),'chars; analysis',st,'; key points',kst)
+    log('B done' if done else 'B NOT written',name,rep['nodes'],'nodes',len(sgf),'chars; analysis',st,'; key points',kst)
 if __name__=='__main__':
     setup_stdio()
     G=groups()
