@@ -24,13 +24,13 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
   `tools/check_repo.py`, a local check that needs only Python 3: references in `index.html`, JSON files, `data/library.js` against the SGF files, SGF syntax, Python syntax, files that should not be committed, and a rough token scan.
 
-- `docs/LICENSE-ADVICE.md`:许可证的决定(代码用 PolyForm Strict,我们自己的数据和文档用 CC BY-NC-ND,老师的讲解文字除外)以及背后的对比分析;`docs/COMPUTE-PLATFORMS.md`:云 GPU 方案清单,附 LRZ 说明。LICENSE 文件本身放在单独的 PR 里。
+- `docs/LICENSE-ADVICE.md`:许可证的决定(代码用 PolyForm Noncommercial,我们自己的数据和文档用 CC BY-NC-SA,要求署名,老师的讲解文字除外;更严的 PolyForm Strict 和 CC BY-NC-ND 考虑过但没有采用)以及背后的对比分析;`docs/COMPUTE-PLATFORMS.md`:云 GPU 方案清单,附 LRZ 说明。LICENSE 文件本身放在单独的 PR 里。
 
-  `docs/LICENSE-ADVICE.md`, the license decision (PolyForm Strict for the code, CC BY-NC-ND for our own data and docs, the teacher's commentary excluded) with the comparison behind it, and `docs/COMPUTE-PLATFORMS.md`, a list of cloud GPU options with notes on LRZ. The LICENSE files themselves come in a separate pull request.
+  `docs/LICENSE-ADVICE.md`, the license decision (PolyForm Noncommercial for the code, CC BY-NC-SA for our own data and docs, credit required, the teacher's commentary excluded; the stricter PolyForm Strict and CC BY-NC-ND were considered and not chosen) with the comparison behind it, and `docs/COMPUTE-PLATFORMS.md`, a list of cloud GPU options with notes on LRZ. The LICENSE files themselves come in a separate pull request.
 
-- 文档采用双语形式:一段英文,紧跟对应的中文。
+- 文档采用双语形式:一段中文,紧跟对应的英文。
 
-  The docs are bilingual, an English paragraph followed by its Chinese counterpart.
+  The docs are bilingual, a Chinese paragraph followed by its English counterpart.
 
 ### Changed
 
