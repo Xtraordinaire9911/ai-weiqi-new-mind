@@ -1,4 +1,5 @@
 import sys,json,subprocess,numpy as np
+from wqutil import atomic_write_json   # atomic: b.json existing must mean it is complete
 W,H=1134,720;X0,Y0,D=248.0,40.0,35.4
 ff=sys.argv[3]
 cmd=[ff,'-v','error','-i',sys.argv[1],'-vf','fps=6,scale=1134:720','-f','rawvideo','-pix_fmt','rgb24','-']
@@ -18,5 +19,5 @@ while True:
     f=np.frombuffer(b,np.uint8).reshape(H,W,3)
     ok=abs(int(f[200,300,0])-225)<40 and abs(int(f[200,300,2])-85)<60   # 棋盘底色检测
     out.append([i/6,read(f) if ok else None]);i+=1
-json.dump(out,open(sys.argv[2],'w'))
+atomic_write_json(sys.argv[2],out)
 print(len(out),sum(1 for o in out if o[1]))

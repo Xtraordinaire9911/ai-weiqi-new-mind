@@ -1,6 +1,7 @@
 # 无人值守流水线: 视频(下载->转写->识谱) -> 按SGF分组合并树 -> KataGo局部分析 -> 合成带解析SGF
 import json,os,sys,subprocess,glob,re,threading,time,traceback
 from concurrent.futures import ThreadPoolExecutor
+from wqutil import atomic_write_json,atomic_write_text   # atomic outputs: a kill mid-write must not leave partial files
 W=r'D:\tmp\work';V=r'D:\tmp\vid';PROJ=r'D:\workspace\fun\Weiqi\Weiqi_AI\josekiapp'
 PY=os.environ['LOCALAPPDATA']+r'\Programs\Python\Python312\python.exe'
 FF=glob.glob(os.environ['LOCALAPPDATA']+r'\Microsoft\WinGet\Packages\Gyan.FFmpeg*\**\ffmpeg.exe',recursive=True)[0]
@@ -154,7 +155,7 @@ def groups():
     return out
 def stageB(name,idxs,visits=150):
     safe=re.sub(r'[\\/:*?"<>|]','',name);base=os.path.join(W,'g_'+safe)
-    N=build_tree(idxs);json.dump(N,open(base+'.n.json','w'))
+    N=build_tree(idxs);atomic_write_json(base+'.n.json',N)
     a2=base+'.a2.json'
     if not os.path.exists(a2) and not os.environ.get('NOAN'):
         subprocess.run([PY,W+r'\analyze2.py',base+'.n.json',a2,'220','100'],capture_output=True)
@@ -162,8 +163,8 @@ def stageB(name,idxs,visits=150):
     summ=open(W+r'\summary_%s.md'%safe,encoding='utf-8').read() if os.path.exists(W+r'\summary_%s.md'%safe) else ''
     kp=os.path.join(W,'kp_'+safe+'.json');KP=json.load(open(kp,encoding='utf-8')) if os.path.exists(kp) else {}
     sgf=merge(N,A,idxs,name,summ,KP)
-    json.dump(DUMP[:],open(os.path.join(W,'kpin_'+safe+'.json'),'w',encoding='utf-8'),ensure_ascii=False);DUMP.clear()
-    open(PROJ+r'\data\sgf\chenlintao\定式大全\%s.sgf'%name,'w',encoding='utf-8').write(sgf)
+    atomic_write_json(os.path.join(W,'kpin_'+safe+'.json'),DUMP[:],ensure_ascii=False);DUMP.clear()
+    atomic_write_text(PROJ+r'\data\sgf\chenlintao\定式大全\%s.sgf'%name,sgf)
     log('B done',name,sum(1 for n in N if not n['dead']),'nodes',len(sgf))
 if __name__=='__main__':
     G=groups();need=sorted({i for _,ix in G for i in ix},key=lambda i:-IDXDUR.get(i,0)) if False else None

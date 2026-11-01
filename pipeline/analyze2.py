@@ -1,4 +1,5 @@
 import json,sys,subprocess,os,time,re
+from wqutil import atomic_write_json   # atomic: a2.json existing must mean the analysis finished
 # 用法: analyze2.py n.json out.json [主搜索visits=400] [强制评估visits=150]
 # 修正: KataGo 配置 reportAnalysisWinratesAs=BLACK, 所有分数/胜率均为黑方视角 -> 这里统一转成"当前行棋方视角"(stm)
 root=r'D:\workspace\fun\Weiqi\Weiqi_AI';E=root+r'\engine\katago-v1.18.0-opencl-windows-x64'
@@ -92,4 +93,4 @@ for i,c,m in need:
     if not f or 'cand' not in f or not f['cand']:continue
     t=f['cand'][0]
     a['cand'].append({'m':m,'v':VF,'s':round(-f['score'],1),'wr':round(1-f['wr'],3),'p':-1,'pv':[m]+t['pv'][:7],'f':1})
-p.stdin.close();json.dump(res,open(out,'w'));print('done',round(time.time()-t0),file=sys.stderr)
+p.stdin.close();atomic_write_json(out,res);print('done',round(time.time()-t0),file=sys.stderr)
