@@ -1,5 +1,42 @@
 analysis_logs/
 _test.html
-*.mp4
 *.pyc
 __pycache__/
+
+# Video and audio: the copyright belongs to the original authors, never commit them
+*.mp4
+*.mkv
+*.webm
+*.flv
+*.mp3
+*.wav
+*.m4a
+
+# Network weights and third party programs: each has its own license, download them from the official source
+*.bin.gz
+*.onnx
+*.pt
+*.pth
+*.safetensors
+katago_env/
+
+# Intermediate files from batch runs
+n_json.zip
+a2_results.zip
+
+# Credentials and keys: never commit (Kaggle, Colab, Hugging Face, GitHub tokens and so on)
+.env
+.env.*
+kaggle.json
+token.json
+credentials.json
+*.pem
+
+# Local clutter
+.venv/
+venv/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log

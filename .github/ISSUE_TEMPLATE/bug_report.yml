@@ -1,0 +1,33 @@
+name: 缺陷报告 / Bug report
+description: 查看器、流水线或工具的行为不符合预期 / The viewer, the pipeline or a tool does not behave as expected
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请不要贴令牌、密钥或个人信息。如果是变化图、讲解或评估有误,请改用"内容问题"表单。
+
+        Please do not paste tokens, keys or personal details. For a wrong variation, comment or evaluation use the content issue form instead.
+  - type: textarea
+    id: what
+    attributes:
+      label: 发生了什么,你期望的是什么 / What happened and what did you expect
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤 / Steps to reproduce
+      placeholder: |
+        1. 打开 index.html,选择 ... / Open index.html and pick ...
+        2. 按右方向键走到第 N 手 / Press the right arrow until move N
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: 浏览器和系统 / Browser and system
+      description: 另外请附上页面左上角显示的界面版本和数据时间。 / Also the viewer version and data time shown at the top left of the page.
+    validations:
+      required: true
