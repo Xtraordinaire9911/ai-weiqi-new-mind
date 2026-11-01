@@ -760,10 +760,27 @@ def make_units(block: Block, ctx: Context, container: str) -> List[object]:
 
 def pair_units(run: List[Unit], ctx: Context, report_lone: bool) -> None:
     """Pair the units of one run, left to right. Chinese then English is right."""
-    i = 0
-    n = len(run)
     lone_en: List[Unit] = []
     lone_zh: List[Unit] = []
+    # Two or more Chinese units followed by two or more English ones (or the other way round)
+    # are grouped by language instead of paired. Every English unit of such a block is reported.
+    segments: List[Tuple[str, List[int]]] = []
+    for idx, u in enumerate(run):
+        if segments and segments[-1][0] == u.cls:
+            segments[-1][1].append(idx)
+        else:
+            segments.append((u.cls, [idx]))
+    grouped: Set[int] = set()
+    for (cls_a, idx_a), (cls_b, idx_b) in zip(segments, segments[1:]):
+        if {cls_a, cls_b} == {ZH, EN} and len(idx_a) >= 2 and len(idx_b) >= 2:
+            grouped.update(idx_a if cls_a == EN else idx_b)
+    if grouped:
+        if report_lone:
+            for idx in sorted(grouped):
+                report_grouped(run[idx], ctx)
+        run = [u for idx, u in enumerate(run) if idx not in grouped]
+    i = 0
+    n = len(run)
     # An English line at the start followed by correct pairs is a lone English line.
     if n >= 3 and n % 2 == 1 and all(u.cls == (EN if k % 2 == 0 else ZH) for k, u in enumerate(run)):
         lone_en.append(run[0])

@@ -118,10 +118,19 @@ def test_trailing_spaces_inside_one_language_do_not_split():
 
 
 def test_grouped_blocks_are_reported_as_order():
-    # all Chinese bullets first, then all English bullets
+    # all Chinese bullets first, then all English bullets: every English bullet is reported
     text = "* " + ZH + "\n* " + ZH2 + "\n\n* " + EN + "\n* " + EN2 + "\n"
-    kinds = [(p.kind, p.rule) for p in check(text)]
-    assert kinds and all(k == ("order", "grouped") for k in kinds)
+    assert found(text) == [(4, "order", "grouped"), (5, "order", "grouped")]
+
+
+def test_english_block_before_chinese_block_is_grouped_too():
+    text = "* " + EN + "\n* " + EN2 + "\n\n* " + ZH + "\n* " + ZH2 + "\n"
+    assert found(text) == [(1, "order", "grouped"), (2, "order", "grouped")]
+
+
+def test_a_single_chinese_note_before_a_pair_is_not_grouped():
+    text = doc(ZH, ZH2, EN2)
+    assert found(text) == []
 
 
 # ---------------------------------------------------------------------------
