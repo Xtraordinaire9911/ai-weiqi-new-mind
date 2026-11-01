@@ -4,9 +4,9 @@
 
 All notable changes to this project are recorded here. The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) and the version numbers follow [Semantic Versioning 2.0.0](https://semver.org/). When to bump the version during the 0.x phase is described in section 7 of [docs/WORKFLOW.md](docs/WORKFLOW.md).
 
-## [Unreleased]
+## 未发布 / [Unreleased]
 
-### Added
+### 新增 / Added
 
 - 分支模型:`main` 放已发布的版本,`develop` 做集成,另有 `feature/<topic>`、`fix/<topic>`、`data/<batch>`、`release/<version>` 和 `hotfix/<topic>`。步骤和命令见 `docs/WORKFLOW.md`。
 
@@ -32,13 +32,13 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
   The docs are bilingual, a Chinese paragraph followed by its English counterpart.
 
-### Changed
+### 变更 / Changed
 
 - `.gitignore` 现在还涵盖视频、音频、网络权重和凭据文件。新增的 `.gitattributes` 让 SGF 文件和 `data/library.js` 保持 LF 换行。
 
   `.gitignore` now also covers video, audio, network weights and credential files. New `.gitattributes` keeps SGF files and `data/library.js` on LF line endings.
 
-### Fixed
+### 修复 / Fixed
 
 - `tools/build.ps1` 写出的占位 SGF 文件,文字里带有未转义的 `]`(就是 "C[]" 这几个字),所以不是合法的 SGF。现在改了文字,并且对分组名、来源名和视频标题做了转义。仓库里已有的 90 个占位文件没有动,等对应分组填充内容时会被替换,`tools/check_repo.py` 把它们汇总成一条警告。
 
@@ -50,7 +50,7 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 First snapshot. Earlier changes were not versioned and cannot be rebuilt, so the state at this point is called v0.1 (read as 0.1.0 under SemVer; the existing tag `v0.1` stays as it is and later versions use three numbers, such as `v0.2.0`).
 
-### Added
+### 新增 / Added
 
 - 查看器 `index.html`:浏览 SGF 变化树;老师讲解、要点、引擎评估和周边子力的卡片;候选点悬停预览、点击固定;老师的着法用蓝色虚线圈加序号标出;视频时间点链接;局部聚焦和全盘两种视角,并带征子演示;版本号和数据时间戳。
 
@@ -64,7 +64,7 @@ First snapshot. Earlier changes were not versioned and cannot be rebuilt, so the
 
   Pipeline: download, Whisper transcription, OpenCV board recognition, variation tree, KataGo local analysis (branch points only, the teacher's moves always evaluated), SGF output.
 
-### Fixed
+### 修复 / Fixed
 
 - 沿途发现并修复的严重错误:(1) KataGo 的目差是从黑方视角给出的,没有换算成行棋方视角,导致"最优"点选错;(2) 变化预览里的棋子颜色反了;(3) 没有显示老师的着法;(4) 缓存导致页面是旧的;(5) 局部搜索下的全盘胜率没有意义,已经去掉。
 
