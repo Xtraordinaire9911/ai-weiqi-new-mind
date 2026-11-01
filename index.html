@@ -28,7 +28,7 @@ footer{grid-column:1/-1;padding:3px 10px;border-top:1px solid var(--bd);backgrou
 <aside><select id="src"></select> <input id="q" placeholder="搜索 夹/挂/三三…" style="width:100%;margin:6px 0"><div id="ver" style="font-size:11px;color:var(--mu);margin:2px 0"></div><div id="prog" style="background:#fff3cd;color:#664d03;border:1px solid #e0b84a;border-radius:5px;padding:6px 8px;margin:6px 0;font-size:13px;display:none"></div><div id="list"></div>
 <details id="rc"><summary><i id="rcd"></i>算力 · <span id="rcs">缓存</span></summary><div class="rcb"><select id="rcm" title="缓存=使用已生成的 AI 数据(默认,不联网)"><option value="off">缓存(默认,不联网)</option><option value="local">本机引擎</option><option value="remote">远程 GPU</option></select><input id="rce" type="text" placeholder="桥接地址 http://127.0.0.1:8787" autocomplete="off" spellcheck="false"><input id="rct" type="password" placeholder="token(只存在本浏览器)" autocomplete="off"><div class="rcr"><button id="rcc">测试连接</button><button id="rca">分析当前局面</button></div><label><input type="checkbox" id="rcu"> 无缓存时自动分析</label><div id="rcn"></div></div></details></aside>
 <main><canvas id="cv" width="800" height="800"></canvas>
-<div class="bar"><button id="b0">⏮</button><button id="b1">◀</button><button id="b2">▶</button><button id="b3">⏭</button><button id="bn">手数</button><button id="bf">视角:自动</button><button id="bl" style="display:none">演示征子</button><button id="ba">AI局部点</button><button id="bk">复制SGF</button></div>
+<div class="bar"><button id="b0">⏮</button><button id="b1">◀</button><button id="b2">▶</button><button id="b3">⏭</button><button id="bn">手数</button><button id="bf">视角:自动</button><button id="bl" style="display:none">演示征子</button><button id="ba">AI局部点</button><button id="bk">复制SGF</button><button id="bq" title="按定式出题,用记忆曲线复习">训练</button></div>
 <div id="cap" style="display:none;margin:4px auto;max-width:min(80vh,100%);padding:3px 10px;border-radius:12px;background:rgba(255,140,0,.15);border:1px solid #e67e22;color:var(--ac);font-size:13px;text-align:center"></div><div id="info"></div><div id="path"></div></main>
 <section><h3 id="ti" style="margin-top:0"></h3><div id="vd"></div><h4>变化(↑↓选,→进入)</h4><div id="vars"></div><div id="cm"></div></section>
 <!-- Credit line: the licenses make credit a condition of reuse, so it stays visible on every page. Keep it when you copy or adapt this viewer. -->
@@ -166,6 +166,7 @@ function drawBoard(){cancelAnimationFrame(raf);raf=0;const rp=rpOf(cur),{b,num,l
  hot.forEach(([c,r])=>{g.strokeStyle='#e67e22';g.lineWidth=3;g.beginPath();g.arc(X(c),Y(r),m*.52,0,7);g.stroke()});
  // 周边外势光环
  if(emph&&cx.stones.length){const p=.5+.5*Math.sin(Date.now()/280);cx.stones.forEach(([c,r])=>{g.fillStyle=`rgba(255,140,0,${.12+.12*p})`;g.beginPath();g.arc(X(c),Y(r),m*(.62+.08*p),0,7);g.fill();g.strokeStyle=`rgba(255,120,0,${.6+.4*p})`;g.lineWidth=3+2*p;g.beginPath();g.arc(X(c),Y(r),m*(.55+.08*p),0,7);g.stroke()});if(!bv&&!hoverG.length&&!document.hidden)raf=requestAnimationFrame(pulse)}
+ if(window.QZ&&QZ.on)QZ.over({X,Y,m,V,nc}); // training view (quiz.js) draws its marks on top of the board
  // 说明条 / 按钮
  const cap=$('cap'),parts=[];if(emph)parts.push('周边: '+(cx.hits.length?cx.hits.join(' / '):'外围有子')+(cx.stones.length?` · 外围子${cx.stones.length}`:''));if(ladderMsg)parts.push(ladderMsg);if(window.RC&&RC.live(cur))parts.push(RC.cap(cur));if(candPts.length)parts.push('半透明棋子=AI候选(颜色=该方行棋) · 圈色/数字=比局部最优差几目(绿≥-0.3) · 蓝虚线圈+序号=老师在视频里走的变化(对应右侧列表) · 悬停看AI变化(只显示该线),点击固定 · 悬停蓝圈=预览老师该分支的后续(序号从1起, 紫色 n-a 圈=进入后才出现的下一层)');
  cap.textContent=parts.join('  ┃  ');cap.style.display=parts.length?'block':'none';$('bl').style.display=cx.hits.includes('征子')?'':'none';
@@ -246,7 +247,7 @@ cv.onclick=e=>{const r=cv.getBoundingClientRect(),V=Vnow,span=Math.max(V.x1-V.x0
  const key=gtp([x,y]);document.querySelectorAll('.chip').forEach(c=>{const h=c.dataset.pv.split(' ').includes(key);c.classList.toggle('hot',h);if(h)c.scrollIntoView({block:'nearest'})});window.RC&&RC.click(x,y)}; // compute switch: trial move on an empty point
 // ---- Credit properties for "copy SGF" ----
 // The licenses make credit a condition of reuse, so a copied game record carries it too. AP, CP and SO are added to the root node, but only the ones the file does not have yet. The stored SGF text is never changed, only the copy.
-const VIEWER_VER='4.4',REPO_URL='https://github.com/Xtraordinaire9911/ai-weiqi-new-mind';
+const VIEWER_VER='4.5',REPO_URL='https://github.com/Xtraordinaire9911/ai-weiqi-new-mind';
 const CREDIT_CP='Based on ai-weiqi-new-mind by Xtraordinaire9911 ('+REPO_URL+'), licensed under PolyForm Noncommercial 1.0.0 (code) and CC BY-NC-SA 4.0 (data and docs). The teacher commentary text belongs to 陈林涛 and is not covered by these licenses.';
 const sgfEsc=v=>v.replace(/[\]\\]/g,'\\$&'); // inside a property value, ] and \ must be escaped
 function withCredit(sgf){
@@ -350,4 +351,5 @@ window.RC=(()=>{
    $('rcu').onchange=()=>{S.auto=$('rcu').checked;save()};$('rcc').onclick=test;$('rca').onclick=()=>analyze(cur,true);
    if(on())test()}}
 })();RC.init();
-</script></body></html>
+</script>
+<script src="quiz_core.js"></script><script src="quiz.js"></script></body></html>
