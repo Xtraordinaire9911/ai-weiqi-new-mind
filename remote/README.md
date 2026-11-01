@@ -21,17 +21,17 @@
 | 方案 / Option | 速度（估算，未实测） / Speed (estimate, not measured) | 成本 / Cost | 主要风险 / Main risks | 是否合规？ / Compliant? |
 |---|---|---|---|---|
 | 现状：本机 780M 核显，OpenCL / Status quo: local 780M integrated GPU, OpenCL | 基准：220 visits（搜索次数）约 11 秒，每组 30 到 40 分钟，总计约 15 到 19 小时 / Baseline: 220 visits ≈ 11 s, 30~40 min per group, about 15~19 hours in total | 免费 / 0 | 占用本机，拖慢其他工作 / Ties up the local machine and slows other work | 是 / Yes |
-| **Colab 免费版，批处理**（`katago_batch.ipynb`） / **Colab free tier, batch** (`katago_batch.ipynb`) | T4 + CUDA：我估计快 5 到 15 倍，总计 2 到 4 小时 / T4 + CUDA: I estimate 5~15x, 2~4 hours in total | 免费 / 0 | 不保证分到 GPU；单次会话最长 12 小时；页面必须保持打开；配额未公布 / No GPU guaranteed; sessions last at most 12 hours; the page must stay open; quota is not published | **是**（只在笔记本内跑批处理，不开隧道） / **Yes** (batch jobs inside the notebook only, no tunnels) |
+| **Colab 免费版，批处理**（`katago_batch.ipynb`） / **Colab free tier, batch** (`katago_batch.ipynb`) | T4 + CUDA：估计快 5 到 15 倍，总计 2 到 4 小时 / T4 + CUDA: estimated 5~15x, 2~4 hours in total | 免费 / 0 | 不保证分到 GPU；单次会话最长 12 小时；页面必须保持打开；配额未公布 / No GPU guaranteed; sessions last at most 12 hours; the page must stay open; quota is not published | **是**（只在笔记本内跑批处理，不开隧道） / **Yes** (batch jobs inside the notebook only, no tunnels) |
 | **Kaggle Notebooks，批处理** / **Kaggle Notebooks, batch** | T4/P100（官方文档：每周约 30 小时 GPU）；可用 “Save & Run All” 在后台运行 / T4/P100 (official docs: about 30 GPU hours per week); can run in the background with "Save & Run All" | 免费 / 0 | 需要手机验证；必须开启联网；P100（没有 tensor core）上的速度未知 / Phone verification needed; Internet must be on; speed on P100 (no tensor cores) unknown | 是（批处理）；有报告称隧道式用法会被封 / Yes (batch); tunnel-style use has been reported to get banned |
 | **LRZ AI Systems + Slurm，批处理** / **LRZ AI Systems + Slurm, batch** | V100/A100/H100：估计快 10 到 50 倍 / V100/A100/H100: estimate 10~50x | 文档没有提到费用 / Docs do not mention fees | 需要 LRZ 项目账号（学生账号不够）；计算节点通常不能联网 / Needs an LRZ project account (a student account is not enough); compute nodes often have no internet | 是（正是其预期用途） / Yes (intended use) |
 | Lightning AI 免费 Studio / Lightning AI free Studio | 取决于 GPU；单个 Studio，每 4 小时需重启 / Depends on the GPU; one Studio, restart every 4 hours | 免费额度（各来源数额不一；价格似乎在 2026-09 调整过） / Free credits (amounts differ between sources; prices were apparently changed in 2026-09) | 额度规则一直在变；未验证能否开放端口 / The credit rules keep changing; not verified whether ports can be exposed | 未验证 / Not verified |
 | Hugging Face Spaces | T4 small 官方价 0.40 美元/小时；ZeroGPU 只支持 Gradio，每天免费 5 分钟 / T4 small is officially 0.40 USD/hour; ZeroGPU supports Gradio only, 5 free minutes per day | 付费 / Paid | 不适合长时间的 KataGo 任务 / Not suited to long KataGo jobs | 是（付费） / Yes (paid) |
-| 浏览器 WebGPU 版 KataGo（web-katrain / Kaya） / Browser WebGPU KataGo (web-katrain / Kaya) | 可能用到核显（经由 D3D12）；速度未实测 / May use the integrated GPU (via D3D12); speed not measured | 免费 / 0 | 上传的模型限 128MB，而我们的权重有 262MB；换网络 => 结果无法与现有数据比较 / Uploaded models are limited to 128MB and our weights are 262MB; a different network => results not comparable with the existing data | 是 / Yes |
+| 浏览器 WebGPU 版 KataGo（web-katrain / Kaya） / Browser WebGPU KataGo (web-katrain / Kaya) | 可能用到核显（经由 D3D12）；速度未实测 / May use the integrated GPU (via D3D12); speed not measured | 免费 / 0 | 上传的模型限 128MB，而本项目使用的权重有 262MB；换网络 => 结果无法与现有数据比较 / Uploaded models are limited to 128MB and the weights used here are 262MB; a different network => results not comparable with the existing data | 是 / Yes |
 | **Colab/Kaggle + ngrok/cloudflared 隧道，供网页实时使用** / **Colab/Kaggle + ngrok/cloudflared tunnel for real-time web page use** | - | - | 账号被封或运行时被终止 / Account ban / runtime termination | **违反条款；本目录不提供** / **Violates the terms; not provided in this directory** |
 
-速度一栏是我根据“本机约 20 visits/秒”和社区数据估出来的（有一篇旧帖给出 T4 上每秒约 390 次网络评估，但那是小网络、旧版本）。**第一组跑完后，请用 `meta.json` 里的 `seconds` 字段校准。**
+速度一栏是根据“本机约 20 visits/秒”和社区数据估算的（有一篇旧帖给出 T4 上每秒约 390 次网络评估，但那是小网络、旧版本）。**第一组跑完后，请用 `meta.json` 里的 `seconds` 字段校准。**
 
-The speed column is my estimate from "20 visits/s locally" and community data (one old post gives about 390 network evaluations per second on a T4, but that was a small network and an old version). **After the first group finishes, calibrate with the `seconds` field in `meta.json`.**
+The speed column is estimated from "20 visits/s locally" and community data (one old post gives about 390 network evaluations per second on a T4, but that was a small network and an old version). **After the first group finishes, calibrate with the `seconds` field in `meta.json`.**
 
 ## 2. 为什么这样设计 / Why it is designed this way
 
@@ -87,9 +87,9 @@ The weights `kata1-tf3-b11c768-s12752M-d6531M.bin.gz` (262MB) are the same file 
 
    **Keep the page open and stay nearby.** After a disconnect, reconnect and re-run all cells; finished groups are skipped automatically.
 
-5. 最后一个单元格会下载 `a2_results.zip`。解压后把 `g_*.a2.json` 放回 `D:\tmp\work`，再按平时的流程继续（`regen.py` → `tools\build.ps1`）。我没有读过 `orch2.py`，所以请对照你现有的流程确认它的断点逻辑能否直接识别这些文件。
+5. 最后一个单元格会下载 `a2_results.zip`。解压后把 `g_*.a2.json` 放回 `D:\tmp\work`，再按平时的流程继续（`regen.py` → `tools\build.ps1`）。`orch2.py` 的阶段 B 发现 `g_<name>.a2.json` 已经存在时，会直接使用它并跳过该分组的本地分析，所以云端算出的结果可以原样放进 `D:\tmp\work`，前提是它们所依据的 `n.json` 与本机上的是同一棵变化树。
 
-   The last cell downloads `a2_results.zip`. Unpack it, put the `g_*.a2.json` files back into `D:\tmp\work`, and continue with the usual flow (`regen.py` → `tools\build.ps1`). I did not read `orch2.py`, so please check against your existing flow whether its checkpoint logic picks the files up directly.
+   The last cell downloads `a2_results.zip`. Unpack it, put the `g_*.a2.json` files back into `D:\tmp\work`, and continue with the usual flow (`regen.py` → `tools\build.ps1`). Stage B of `orch2.py` uses an existing `g_<name>.a2.json` as it is and skips the local analysis for that group, so results from the cloud can be dropped into `D:\tmp\work` unchanged, as long as the `n.json` they were made from is the same tree as the local one.
 
 **Kaggle**：新建一个 Notebook，在右侧面板的 Accelerator 里选一块 GPU，并打开 Internet（需要手机验证）；把 n.json 文件和权重分别做成 Dataset 并添加进来；导入同一个 `.ipynb`；用 *Save & Run All* 可以在后台无人值守地运行，结果可从 Output 下载。
 
@@ -143,9 +143,9 @@ python remote\katago_bridge.py --katago D:\workspace\fun\Weiqi\Weiqi_AI\engine\k
 
 A page opened from `http://localhost:8765` is allowed by default; a `file://` page opened by double-clicking needs `--allow-file-origin`; other origins need `--allow-origin`.
 
-**使用远程 GPU 的合规方式**：(1) 在 LRZ、学校或自己租的虚拟机上启动桥接服务，再用 `ssh -L 8787:127.0.0.1:8787 <machine>` 把端口转发到本机，页面仍然使用 `http://127.0.0.1:8787`；(2) 或者在前面加一层带 TLS 的反向代理，或者给桥接服务传 `--cert/--key`。**不要**在没有 TLS 的情况下监听 `0.0.0.0`（令牌会以明文发送，桥接服务会对此发出警告）。我没有验证过 LRZ 的端口转发流程，请先读 LRZ 的 Jupyter/隧道 FAQ 并确认相关政策。
+**使用远程 GPU 的合规方式**：(1) 在 LRZ、学校或自己租的虚拟机上启动桥接服务，再用 `ssh -L 8787:127.0.0.1:8787 <machine>` 把端口转发到本机，页面仍然使用 `http://127.0.0.1:8787`；(2) 或者在前面加一层带 TLS 的反向代理，或者给桥接服务传 `--cert/--key`。**不要**在没有 TLS 的情况下监听 `0.0.0.0`（令牌会以明文发送，桥接服务会对此发出警告）。LRZ 的端口转发流程未验证，请先读 LRZ 的 Jupyter/隧道 FAQ 并确认相关政策。
 
-**Compliant ways to use a remote GPU**: (1) start the bridge on an LRZ / university / self-rented VM and forward the port to your machine with `ssh -L 8787:127.0.0.1:8787 <machine>`, so the page still uses `http://127.0.0.1:8787`; (2) or put a reverse proxy with TLS in front, or give the bridge `--cert/--key`. **Do not** listen on `0.0.0.0` without TLS (the token would be sent in clear text; the bridge warns about it). I have not verified LRZ's port-forwarding procedure; read the LRZ Jupyter/tunnel FAQ first and check the policy.
+**Compliant ways to use a remote GPU**: (1) start the bridge on an LRZ / university / self-rented VM and forward the port to your machine with `ssh -L 8787:127.0.0.1:8787 <machine>`, so the page still uses `http://127.0.0.1:8787`; (2) or put a reverse proxy with TLS in front, or give the bridge `--cert/--key`. **Do not** listen on `0.0.0.0` without TLS (the token would be sent in clear text; the bridge warns about it). LRZ's port-forwarding procedure is not verified; read the LRZ Jupyter/tunnel FAQ first and check the policy.
 
 ## 5. 服务条款风险（请认真读） / Terms-of-service risks (read this honestly)
 
@@ -157,9 +157,9 @@ Sources are listed at the end; the current wording of the official pages is what
 
   **Colab free tier**: the FAQ lists "connecting to remote proxies" and "file hosting / media serving / other web services unrelated to interactive computing" as prohibited on all hosted runtimes, and "remote control such as SSH, remote desktop" as prohibited on free (or zero-compute-unit) runtimes; offending runtimes may be terminated without warning. It also lists "chess training" and "distributed computing workers". Therefore:
 
-  - 直接在笔记本里跑 KataGo 批量分析并下载结果，属于交互式计算，**是允许的**，但你必须在场并保持页面打开。KataGo 分析既不是训练，也不是分布式 worker，但这只是我的理解，不是 Google 的保证。
+  - 直接在笔记本里跑 KataGo 批量分析并下载结果，属于交互式计算，**是允许的**，但你必须在场并保持页面打开。KataGo 分析既不是训练，也不是分布式 worker，但这只是一种解读，不是 Google 的保证。
 
-    Running KataGo batch analysis directly in the notebook and downloading the results is interactive computing and **allowed**, but you must be present with the page open. KataGo analysis is neither training nor a distributed worker, but that is my reading, not a guarantee from Google.
+    Running KataGo batch analysis directly in the notebook and downloading the results is interactive computing and **allowed**, but you must be present with the page open. KataGo analysis is neither training nor a distributed worker, but that is an interpretation, not a guarantee from Google.
 
   - 开 ngrok/cloudflared 隧道、使用 `colab_ssh`、让网页从外部实时连接 Colab 里的桥接服务，或者使用保活脚本：这些做法**违反**条款，或者是在绕过限制。**不要这么做，本目录也不提供。** 对于仍有剩余计算单元的付费用户，SSH 限制有所不同，但“远程代理 / Web 服务”这条规则仍然适用于所有托管运行时，所以即便用 Pro，也不建议把桥接服务暴露出去。
 
@@ -169,17 +169,17 @@ Sources are listed at the end; the current wording of the official pages is what
 
     The quota is not published and a GPU is not guaranteed; when it says the usage limit has been reached, stop. Do not switch accounts or work around it.
 
-- **Kaggle**：官方文档给出每周的 GPU 配额（约 30 小时，“有时更高”）和 60 分钟的空闲超时；GPU 和 Internet 都需要手机验证。一个开源项目报告说，Kaggle 封堵了进入运行中 kernel 的 SSH 隧道，并警告这可能违反条款。我没有在 Kaggle 的条款里找到明确允许“对外提供服务”的文字，所以只使用批处理模式。
+- **Kaggle**：官方文档给出每周的 GPU 配额（约 30 小时，“有时更高”）和 60 分钟的空闲超时；GPU 和 Internet 都需要手机验证。一个开源项目报告说，Kaggle 封堵了进入运行中 kernel 的 SSH 隧道，并警告这可能违反条款。在 Kaggle 的条款里没有找到明确允许“对外提供服务”的文字，所以只使用批处理模式。
 
-  **Kaggle**: the official docs give a weekly GPU quota (about 30 hours, "or sometimes higher") and a 60-minute idle timeout; GPU and Internet need phone verification. An open-source project reports that Kaggle blocked SSH tunnels into running kernels and warned that this may violate the terms. I found no text in Kaggle's terms that explicitly allows "serving to the outside", so only batch mode is used.
+  **Kaggle**: the official docs give a weekly GPU quota (about 30 hours, "or sometimes higher") and a 60-minute idle timeout; GPU and Internet need phone verification. An open-source project reports that Kaggle blocked SSH tunnels into running kernels and warned that this may violate the terms. No text that explicitly allows "serving to the outside" was found in Kaggle's terms, so only batch mode is used.
 
 - **LRZ**：账号与项目绑定，必须说明用途，还要遵守出口管制声明；学生账号需要挂靠项目。合规的用法是批处理作业。
 
   **LRZ**: accounts are tied to projects, the purpose must be stated, and the export-control statement must be observed; student accounts need a project. The compliant use is batch jobs.
 
-- **Lightning AI**：免费额度的规则最近变过（见来源）；它的 Studio 支持 SSH，但我没有核实对外开放端口的条款，所以目前既不推荐，也没有提供脚本。
+- **Lightning AI**：免费额度的规则最近变过（见来源）；它的 Studio 支持 SSH，但对外开放端口的条款未核实，所以目前既不推荐，也没有提供脚本。
 
-  **Lightning AI**: the free-credit rules have changed recently (see the sources); its Studios support SSH, but I did not verify the port-exposure terms, so it is neither recommended nor given a script for now.
+  **Lightning AI**: the free-credit rules have changed recently (see the sources); its Studios support SSH, but the port-exposure terms are not verified, so it is neither recommended nor given a script for now.
 
 - **数据**：上传到云端的只有视频里摆出的棋局局面（坐标），不包含账号或个人信息。
 
