@@ -21,13 +21,18 @@ canvas{width:100%;max-width:min(80vh,100%);aspect-ratio:1;display:block;margin:a
 #rc summary{cursor:pointer;user-select:none;list-style:none}#rc summary::-webkit-details-marker{display:none}#rc summary:hover{color:var(--ac)}
 #rc i{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--bd);margin-right:6px;vertical-align:1px}#rc i.ok{background:var(--gd)}#rc i.bad{background:var(--rd)}#rc i.busy{background:var(--ac)}
 #rc .rcb{display:grid;gap:5px;margin-top:6px}#rc select,#rc input[type=text],#rc input[type=password]{width:100%;font-size:12px;padding:3px 6px}#rc .rcr{display:flex;gap:5px}#rc .rcr button{flex:1;font-size:12px;padding:3px 6px}#rc button:disabled{opacity:.45;cursor:default}#rc button:disabled:hover{border-color:var(--bd);color:inherit}#rc #rcn{line-height:1.5}
+/* credit footer: a slim bar under the three columns, so it never overlaps the sticky compute row at the bottom of the sidebar */
+footer{grid-column:1/-1;padding:3px 10px;border-top:1px solid var(--bd);background:var(--pn);color:var(--mu);font-size:11px;line-height:1.5;text-align:center}footer a{color:var(--ac);text-decoration:none}footer a:hover{text-decoration:underline}
+@media(min-width:981px){body{grid-template-rows:minmax(0,1fr) auto}}
 </style></head><body>
 <aside><select id="src"></select> <input id="q" placeholder="搜索 夹/挂/三三…" style="width:100%;margin:6px 0"><div id="ver" style="font-size:11px;color:var(--mu);margin:2px 0"></div><div id="prog" style="background:#fff3cd;color:#664d03;border:1px solid #e0b84a;border-radius:5px;padding:6px 8px;margin:6px 0;font-size:13px;display:none"></div><div id="list"></div>
 <details id="rc"><summary><i id="rcd"></i>算力 · <span id="rcs">缓存</span></summary><div class="rcb"><select id="rcm" title="缓存=使用已生成的 AI 数据(默认,不联网)"><option value="off">缓存(默认,不联网)</option><option value="local">本机引擎</option><option value="remote">远程 GPU</option></select><input id="rce" type="text" placeholder="桥接地址 http://127.0.0.1:8787" autocomplete="off" spellcheck="false"><input id="rct" type="password" placeholder="token(只存在本浏览器)" autocomplete="off"><div class="rcr"><button id="rcc">测试连接</button><button id="rca">分析当前局面</button></div><label><input type="checkbox" id="rcu"> 无缓存时自动分析</label><div id="rcn"></div></div></details></aside>
 <main><canvas id="cv" width="800" height="800"></canvas>
-<div class="bar"><button id="b0">⏮</button><button id="b1">◀</button><button id="b2">▶</button><button id="b3">⏭</button><button id="bn">手数</button><button id="bf">视角:自动</button><button id="bl" style="display:none">演示征子</button><button id="ba">AI局部点</button><button id="bk">复制SGF</button></div>
+<div class="bar"><button id="b0">⏮</button><button id="b1">◀</button><button id="b2">▶</button><button id="b3">⏭</button><button id="bn">手数</button><button id="bf">视角:自动</button><button id="bl" style="display:none">演示征子</button><button id="ba">AI局部点</button><button id="bk">复制SGF</button><button id="bq" title="按定式出题,用记忆曲线复习">训练</button></div>
 <div id="cap" style="display:none;margin:4px auto;max-width:min(80vh,100%);padding:3px 10px;border-radius:12px;background:rgba(255,140,0,.15);border:1px solid #e67e22;color:var(--ac);font-size:13px;text-align:center"></div><div id="info"></div><div id="path"></div></main>
 <section><h3 id="ti" style="margin-top:0"></h3><div id="vd"></div><h4>变化(↑↓选,→进入)</h4><div id="vars"></div><div id="cm"></div></section>
+<!-- Credit line: the licenses make credit a condition of reuse, so it stays visible on every page. Keep it when you copy or adapt this viewer. -->
+<footer id="cr"><a href="https://github.com/Xtraordinaire9911/ai-weiqi-new-mind" target="_blank" rel="noopener noreferrer">ai-weiqi-new-mind</a> · 代码 <a href="https://polyformproject.org/licenses/noncommercial/1.0.0" target="_blank" rel="noopener noreferrer">PolyForm Noncommercial 1.0.0</a> · 数据与文档 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noopener noreferrer">CC BY-NC-SA 4.0</a> · 讲解文字版权归陈林涛 · <a href="https://github.com/Xtraordinaire9911/ai-weiqi-new-mind/blob/main/NOTICE.md" target="_blank" rel="noopener noreferrer">署名与许可说明</a></footer>
 <script src="data/library.js"></script>
 <script src="engine_core.js"></script><script src="engine_net.js"></script><script src="engine_panel.js"></script>
 <script>
@@ -162,6 +167,7 @@ function drawBoard(){cancelAnimationFrame(raf);raf=0;const rp=rpOf(cur),{b,num,l
  hot.forEach(([c,r])=>{g.strokeStyle='#e67e22';g.lineWidth=3;g.beginPath();g.arc(X(c),Y(r),m*.52,0,7);g.stroke()});
  // 周边外势光环
  if(emph&&cx.stones.length){const p=.5+.5*Math.sin(Date.now()/280);cx.stones.forEach(([c,r])=>{g.fillStyle=`rgba(255,140,0,${.12+.12*p})`;g.beginPath();g.arc(X(c),Y(r),m*(.62+.08*p),0,7);g.fill();g.strokeStyle=`rgba(255,120,0,${.6+.4*p})`;g.lineWidth=3+2*p;g.beginPath();g.arc(X(c),Y(r),m*(.55+.08*p),0,7);g.stroke()});if(!bv&&!hoverG.length&&!document.hidden)raf=requestAnimationFrame(pulse)}
+ if(window.QZ&&QZ.on)QZ.over({X,Y,m,V,nc}); // training view (quiz.js) draws its marks on top of the board
  // 说明条 / 按钮
  const cap=$('cap'),parts=[];if(emph)parts.push('周边: '+(cx.hits.length?cx.hits.join(' / '):'外围有子')+(cx.stones.length?` · 外围子${cx.stones.length}`:''));if(ladderMsg)parts.push(ladderMsg);if(window.RC&&RC.live(cur))parts.push(RC.cap(cur));if(candPts.length)parts.push('半透明棋子=AI候选(颜色=该方行棋) · 圈色/数字=比局部最优差几目(绿≥-0.3) · 蓝虚线圈+序号=老师在视频里走的变化(对应右侧列表) · 悬停看AI变化(只显示该线),点击固定 · 悬停蓝圈=预览老师该分支的后续(序号从1起, 紫色 n-a 圈=进入后才出现的下一层)');
  cap.textContent=parts.join('  ┃  ');cap.style.display=parts.length?'block':'none';$('bl').style.display=cx.hits.includes('征子')?'':'none';
@@ -240,8 +246,25 @@ cv.onclick=e=>{const r=cv.getBoundingClientRect(),V=Vnow,span=Math.max(V.x1-V.x0
  const cd=candPts.find(c=>c.q[0]==x&&c.q[1]==y);if(cd){const pg=cd.pv.map(fromGtp).filter(Boolean);if(ghost.length&&ghost===pinAI&&ghost.join()===pg.join()){ghost=[];pinAI=null}else{ghost=pg;pinAI=ghost}hot=[];drawBoard();return} // pinAI marks the pinned line as an AI line (shown alone, like the hover); clicking the same candidate again unpins it
  if(ghost.length&&ghost===pinAI){ghost=[];pinAI=null;drawBoard()} // a pinned AI line hides all dots, so a click anywhere else on the board must be able to release it
  const key=gtp([x,y]);document.querySelectorAll('.chip').forEach(c=>{const h=c.dataset.pv.split(' ').includes(key);c.classList.toggle('hot',h);if(h)c.scrollIntoView({block:'nearest'})});window.RC&&RC.click(x,y)}; // compute switch: trial move on an empty point
+// ---- Credit properties for "copy SGF" ----
+// The licenses make credit a condition of reuse, so a copied game record carries it too. AP, CP and SO are added to the root node, but only the ones the file does not have yet. The stored SGF text is never changed, only the copy.
+const VIEWER_VER='4.6',REPO_URL='https://github.com/Xtraordinaire9911/ai-weiqi-new-mind';
+const CREDIT_CP='Based on ai-weiqi-new-mind by Xtraordinaire9911 ('+REPO_URL+'), licensed under PolyForm Noncommercial 1.0.0 (code) and CC BY-NC-SA 4.0 (data and docs). The teacher commentary text belongs to 陈林涛 and is not covered by these licenses.';
+const sgfEsc=v=>v.replace(/[\]\\]/g,'\\$&'); // inside a property value, ] and \ must be escaped
+function withCredit(sgf){
+ const start=sgf.indexOf(';');if(start<0)return sgf;
+ let i=start+1,last=i;const have=new Set(); // last = position right after the final value of the root node
+ while(i<sgf.length){ // walk the root node property by property, it ends at the next ; ( or ) outside brackets
+  while(/\s/.test(sgf[i]||''))i++;
+  const m=/^[A-Za-z]+(?=\s*\[)/.exec(sgf.slice(i,i+20));if(!m)break;
+  have.add(m[0].replace(/[a-z]/g,''));i+=m[0].length;
+  for(;;){let j=i;while(/\s/.test(sgf[j]||''))j++;if(sgf[j]!=='[')break;
+   j++;while(j<sgf.length&&sgf[j]!==']'){if(sgf[j]==='\\')j++;j++}
+   i=j+1;last=i}}
+ const add=[['AP','ai-weiqi-new-mind:'+VIEWER_VER],['CP',CREDIT_CP],['SO',REPO_URL]].filter(([k])=>!have.has(k)).map(([k,v])=>k+'['+sgfEsc(v)+']').join('');
+ return add?sgf.slice(0,last)+add+sgf.slice(last):sgf}
 const nav={b0:()=>go(tree),b1:()=>cur.up&&go(cur.up),b2:()=>cur.c[sel]&&go(cur.c[sel]),b3:()=>{let n=cur;while(n.c[0])n=n.c[0];go(n)}};
-for(const k in nav)$(k).onclick=nav[k];$('bn').onclick=()=>{showN=!showN;draw()};$('bf').onclick=()=>{viewMode=(viewMode+1)%3;draw()};$('bl').onclick=ladderDemo;$('ba').onclick=()=>{showAI=!showAI;draw()};$('bk').onclick=()=>navigator.clipboard.writeText(col.sgf);
+for(const k in nav)$(k).onclick=nav[k];$('bn').onclick=()=>{showN=!showN;draw()};$('bf').onclick=()=>{viewMode=(viewMode+1)%3;draw()};$('bl').onclick=ladderDemo;$('ba').onclick=()=>{showAI=!showAI;draw()};$('bk').onclick=()=>navigator.clipboard.writeText(withCredit(col.sgf));
 onkeydown=e=>{if(e.target.tagName==='INPUT')return;const k=e.key;if(k==='ArrowLeft')nav.b1();else if(k==='ArrowRight')nav.b2();else if(k==='ArrowUp'){sel=Math.max(0,sel-1);panel()}else if(k==='ArrowDown'){sel=Math.min(cur.c.length-1,sel+1);panel()}else if(k==='Home')nav.b0();else if(k==='End')nav.b3()};
 // ---- 库 ----
 function open_(c){col=c;tree=parse(c.sgf);view=bbox(tree);c.vb=((tree.p.PC||[''])[0].match(/BV\w+/g))||c.videos.map(v=>v.bvid);$('ti').textContent=c.name;$('vd').innerHTML=c.videos.map((v,i)=>`<div><a target="_blank" href="https://www.bilibili.com/video/${v.bvid}">▶ ${v.title}</a></div>`).join('');go(tree);document.querySelectorAll('#list div').forEach(d=>d.classList.toggle('on',d.dataset.id===c.id))}
@@ -249,7 +272,7 @@ function renderList(){const q=$('q').value.trim(),s=$('src').value,box=$('list')
  LIB.filter(c=>c.source===s&&(!q||c.name.includes(q)||c.videos.some(v=>v.title.includes(q)))).forEach(c=>{if(c.series!==ser){ser=c.series;box.insertAdjacentHTML('beforeend',`<h4>${c.sourceName} · ${ser}</h4>`)}const d=document.createElement('div');d.textContent=c.name;d.dataset.id=c.id;d.onclick=()=>open_(c);box.appendChild(d)})}
 [...new Set(LIB.map(c=>c.source))].forEach(s=>$('src').add(new Option(LIB.find(c=>c.source===s).sourceName,s)));
 $('src').onchange=$('q').oninput=renderList;renderList();
-{$('ver').textContent='界面 v4.4 · 数据 '+(window.LIBT||'旧缓存?');const M=LIB.length,D=LIB.filter(c=>c.sgf.length>1500).length,pg=$('prog');if(D<M){pg.style.display='block';pg.textContent=`内容生成中: ${D}/${M} 个定式已完成`}
+{$('ver').textContent='界面 v'+VIEWER_VER+' · 数据 '+(window.LIBT||'旧缓存?');const M=LIB.length,D=LIB.filter(c=>c.sgf.length>1500).length,pg=$('prog');if(D<M){pg.style.display='block';pg.textContent=`内容生成中: ${D}/${M} 个定式已完成`}
  open_(LIB.slice().sort((a,b)=>b.sgf.length-a.sgf.length)[0])}
 </script>
 <script>
@@ -332,4 +355,5 @@ window.RC=(()=>{
    $('rcu').onchange=()=>{S.auto=$('rcu').checked;save()};$('rcc').onclick=test;$('rca').onclick=()=>analyze(cur,true);
    if(on())test()}}
 })();RC.init();
-</script></body></html>
+</script>
+<script src="quiz_core.js"></script><script src="quiz.js"></script></body></html>

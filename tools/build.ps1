@@ -2,6 +2,8 @@
 # 用法: powershell -ExecutionPolicy Bypass -File tools/build.ps1
 $root=Split-Path $PSScriptRoot; $u=New-Object Text.UTF8Encoding $false
 function Clean($s){ ($s -replace '[\/:*?"<>|？！，：。“”、…\s]+','') }
+# Backslash and ] must be escaped inside SGF text values, otherwise the placeholder file is not valid SGF (tools/check_repo.py catches this)
+function Esc($s){ ($s -replace '\\','\\' -replace '\]','\]') }
 $cols=@()
 foreach($sd in Get-ChildItem "$root\data\sources" -Directory){
   $plan=Get-Content -Raw -Encoding utf8 "$($sd.FullName)\plan.json"|ConvertFrom-Json
@@ -18,7 +20,7 @@ foreach($sd in Get-ChildItem "$root\data\sources" -Directory){
     $f="$dir\$($g.name).sgf"
     if(-not (Test-Path $f)){
       $c=($g.vids|%{"$($_.bvid) $($_.title)"}) -join "`n"
-      [IO.File]::WriteAllText($f,"(;GM[1]FF[4]CA[UTF-8]SZ[19]KM[6.5]GN[$($g.name)]PC[$($plan.name)]C[来源视频:`n$c`n`n(待填充: 变化分支 + 口述解析; 解析写在各节点C[]里, 可用 @mm:ss 标注视频时间点)])",$u)
+      [IO.File]::WriteAllText($f,"(;GM[1]FF[4]CA[UTF-8]SZ[19]KM[6.5]GN[$(Esc $g.name)]PC[$(Esc $plan.name)]C[来源视频:`n$(Esc $c)`n`n(待填充: 变化分支 + 口述解析; 解析写在各节点的 C 属性里, 可用 @mm:ss 标注视频时间点)])",$u)
     }
     $cols+=[pscustomobject]@{id="$($sd.Name)/$($plan.series.($g.ser))/$($g.name)";source=$sd.Name;sourceName=$plan.name;series=$plan.series.($g.ser);name=$g.name;videos=@($g.vids|%{@{bvid=$_.bvid;title=$_.title}});sgf=[IO.File]::ReadAllText($f)}
   }

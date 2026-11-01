@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 贡献指南 / Contributing guide
+    url: https://github.com/Xtraordinaire9911/ai-weiqi-new-mind/blob/main/CONTRIBUTING.md
+    about: 提交 PR 之前请先读一下。 / Please read this before sending a pull request.
