@@ -244,8 +244,25 @@ cv.onclick=e=>{const r=cv.getBoundingClientRect(),V=Vnow,span=Math.max(V.x1-V.x0
  const cd=candPts.find(c=>c.q[0]==x&&c.q[1]==y);if(cd){const pg=cd.pv.map(fromGtp).filter(Boolean);if(ghost.length&&ghost===pinAI&&ghost.join()===pg.join()){ghost=[];pinAI=null}else{ghost=pg;pinAI=ghost}hot=[];drawBoard();return} // pinAI marks the pinned line as an AI line (shown alone, like the hover); clicking the same candidate again unpins it
  if(ghost.length&&ghost===pinAI){ghost=[];pinAI=null;drawBoard()} // a pinned AI line hides all dots, so a click anywhere else on the board must be able to release it
  const key=gtp([x,y]);document.querySelectorAll('.chip').forEach(c=>{const h=c.dataset.pv.split(' ').includes(key);c.classList.toggle('hot',h);if(h)c.scrollIntoView({block:'nearest'})});window.RC&&RC.click(x,y)}; // compute switch: trial move on an empty point
+// ---- Credit properties for "copy SGF" ----
+// The licenses make credit a condition of reuse, so a copied game record carries it too. AP, CP and SO are added to the root node, but only the ones the file does not have yet. The stored SGF text is never changed, only the copy.
+const VIEWER_VER='4.3',REPO_URL='https://github.com/Xtraordinaire9911/ai-weiqi-new-mind';
+const CREDIT_CP='Based on ai-weiqi-new-mind by Xtraordinaire9911 ('+REPO_URL+'), licensed under PolyForm Noncommercial 1.0.0 (code) and CC BY-NC-SA 4.0 (data and docs). The teacher commentary text belongs to 陈林涛 and is not covered by these licenses.';
+const sgfEsc=v=>v.replace(/[\]\\]/g,'\\$&'); // inside a property value, ] and \ must be escaped
+function withCredit(sgf){
+ const start=sgf.indexOf(';');if(start<0)return sgf;
+ let i=start+1,last=i;const have=new Set(); // last = position right after the final value of the root node
+ while(i<sgf.length){ // walk the root node property by property, it ends at the next ; ( or ) outside brackets
+  while(/\s/.test(sgf[i]||''))i++;
+  const m=/^[A-Za-z]+(?=\s*\[)/.exec(sgf.slice(i,i+20));if(!m)break;
+  have.add(m[0].replace(/[a-z]/g,''));i+=m[0].length;
+  for(;;){let j=i;while(/\s/.test(sgf[j]||''))j++;if(sgf[j]!=='[')break;
+   j++;while(j<sgf.length&&sgf[j]!==']'){if(sgf[j]==='\\')j++;j++}
+   i=j+1;last=i}}
+ const add=[['AP','ai-weiqi-new-mind:'+VIEWER_VER],['CP',CREDIT_CP],['SO',REPO_URL]].filter(([k])=>!have.has(k)).map(([k,v])=>k+'['+sgfEsc(v)+']').join('');
+ return add?sgf.slice(0,last)+add+sgf.slice(last):sgf}
 const nav={b0:()=>go(tree),b1:()=>cur.up&&go(cur.up),b2:()=>cur.c[sel]&&go(cur.c[sel]),b3:()=>{let n=cur;while(n.c[0])n=n.c[0];go(n)}};
-for(const k in nav)$(k).onclick=nav[k];$('bn').onclick=()=>{showN=!showN;draw()};$('bf').onclick=()=>{viewMode=(viewMode+1)%3;draw()};$('bl').onclick=ladderDemo;$('ba').onclick=()=>{showAI=!showAI;draw()};$('bk').onclick=()=>navigator.clipboard.writeText(col.sgf);
+for(const k in nav)$(k).onclick=nav[k];$('bn').onclick=()=>{showN=!showN;draw()};$('bf').onclick=()=>{viewMode=(viewMode+1)%3;draw()};$('bl').onclick=ladderDemo;$('ba').onclick=()=>{showAI=!showAI;draw()};$('bk').onclick=()=>navigator.clipboard.writeText(withCredit(col.sgf));
 onkeydown=e=>{if(e.target.tagName==='INPUT')return;const k=e.key;if(k==='ArrowLeft')nav.b1();else if(k==='ArrowRight')nav.b2();else if(k==='ArrowUp'){sel=Math.max(0,sel-1);panel()}else if(k==='ArrowDown'){sel=Math.min(cur.c.length-1,sel+1);panel()}else if(k==='Home')nav.b0();else if(k==='End')nav.b3()};
 // ---- 库 ----
 function open_(c){col=c;tree=parse(c.sgf);view=bbox(tree);c.vb=((tree.p.PC||[''])[0].match(/BV\w+/g))||c.videos.map(v=>v.bvid);$('ti').textContent=c.name;$('vd').innerHTML=c.videos.map((v,i)=>`<div><a target="_blank" href="https://www.bilibili.com/video/${v.bvid}">▶ ${v.title}</a></div>`).join('');go(tree);document.querySelectorAll('#list div').forEach(d=>d.classList.toggle('on',d.dataset.id===c.id))}
@@ -253,7 +270,7 @@ function renderList(){const q=$('q').value.trim(),s=$('src').value,box=$('list')
  LIB.filter(c=>c.source===s&&(!q||c.name.includes(q)||c.videos.some(v=>v.title.includes(q)))).forEach(c=>{if(c.series!==ser){ser=c.series;box.insertAdjacentHTML('beforeend',`<h4>${c.sourceName} · ${ser}</h4>`)}const d=document.createElement('div');d.textContent=c.name;d.dataset.id=c.id;d.onclick=()=>open_(c);box.appendChild(d)})}
 [...new Set(LIB.map(c=>c.source))].forEach(s=>$('src').add(new Option(LIB.find(c=>c.source===s).sourceName,s)));
 $('src').onchange=$('q').oninput=renderList;renderList();
-{$('ver').textContent='界面 v4.3 · 数据 '+(window.LIBT||'旧缓存?');const M=LIB.length,D=LIB.filter(c=>c.sgf.length>1500).length,pg=$('prog');if(D<M){pg.style.display='block';pg.textContent=`内容生成中: ${D}/${M} 个定式已完成`}
+{$('ver').textContent='界面 v'+VIEWER_VER+' · 数据 '+(window.LIBT||'旧缓存?');const M=LIB.length,D=LIB.filter(c=>c.sgf.length>1500).length,pg=$('prog');if(D<M){pg.style.display='block';pg.textContent=`内容生成中: ${D}/${M} 个定式已完成`}
  open_(LIB.slice().sort((a,b)=>b.sgf.length-a.sgf.length)[0])}
 </script>
 <script>
