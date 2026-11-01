@@ -17,8 +17,13 @@ canvas{width:100%;max-width:min(80vh,100%);aspect-ratio:1;display:block;margin:a
 .pv{border-color:var(--ac);color:var(--ac)}.pv:hover{background:var(--ac);color:#fff}
 .t{color:var(--ac);cursor:pointer;text-decoration:underline}#vars button{display:block;width:100%;text-align:left;margin:3px 0}
 #info{text-align:center;color:var(--mu)}h4{margin:12px 0 4px}
+#rc{position:sticky;bottom:-10px;margin:10px -10px -10px;padding:6px 10px;background:var(--pn);border-top:1px solid var(--bd);font-size:12px;color:var(--mu)}
+#rc summary{cursor:pointer;user-select:none;list-style:none}#rc summary::-webkit-details-marker{display:none}#rc summary:hover{color:var(--ac)}
+#rc i{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--bd);margin-right:6px;vertical-align:1px}#rc i.ok{background:var(--gd)}#rc i.bad{background:var(--rd)}#rc i.busy{background:var(--ac)}
+#rc .rcb{display:grid;gap:5px;margin-top:6px}#rc select,#rc input[type=text],#rc input[type=password]{width:100%;font-size:12px;padding:3px 6px}#rc .rcr{display:flex;gap:5px}#rc .rcr button{flex:1;font-size:12px;padding:3px 6px}#rc button:disabled{opacity:.45;cursor:default}#rc button:disabled:hover{border-color:var(--bd);color:inherit}#rc #rcn{line-height:1.5}
 </style></head><body>
-<aside><select id="src"></select> <input id="q" placeholder="搜索 夹/挂/三三…" style="width:100%;margin:6px 0"><div id="ver" style="font-size:11px;color:var(--mu);margin:2px 0"></div><div id="prog" style="background:#fff3cd;color:#664d03;border:1px solid #e0b84a;border-radius:5px;padding:6px 8px;margin:6px 0;font-size:13px;display:none"></div><div id="list"></div></aside>
+<aside><select id="src"></select> <input id="q" placeholder="搜索 夹/挂/三三…" style="width:100%;margin:6px 0"><div id="ver" style="font-size:11px;color:var(--mu);margin:2px 0"></div><div id="prog" style="background:#fff3cd;color:#664d03;border:1px solid #e0b84a;border-radius:5px;padding:6px 8px;margin:6px 0;font-size:13px;display:none"></div><div id="list"></div>
+<details id="rc"><summary><i id="rcd"></i>算力 · <span id="rcs">缓存</span></summary><div class="rcb"><select id="rcm" title="缓存=使用已生成的 AI 数据(默认,不联网)"><option value="off">缓存(默认,不联网)</option><option value="local">本机引擎</option><option value="remote">远程 GPU</option></select><input id="rce" type="text" placeholder="桥接地址 http://127.0.0.1:8787" autocomplete="off" spellcheck="false"><input id="rct" type="password" placeholder="token(只存在本浏览器)" autocomplete="off"><div class="rcr"><button id="rcc">测试连接</button><button id="rca">分析当前局面</button></div><label><input type="checkbox" id="rcu"> 无缓存时自动分析</label><div id="rcn"></div></div></details></aside>
 <main><canvas id="cv" width="800" height="800"></canvas>
 <div class="bar"><button id="b0">⏮</button><button id="b1">◀</button><button id="b2">▶</button><button id="b3">⏭</button><button id="bn">手数</button><button id="bf">视角:自动</button><button id="bl" style="display:none">演示征子</button><button id="ba">AI局部点</button><button id="bk">复制SGF</button></div>
 <div id="cap" style="display:none;margin:4px auto;max-width:min(80vh,100%);padding:3px 10px;border-radius:12px;background:rgba(255,140,0,.15);border:1px solid #e67e22;color:var(--ac);font-size:13px;text-align:center"></div><div id="info"></div><div id="path"></div></main>
@@ -84,7 +89,8 @@ function ladderDemo(){const{b,num}=replay(cur),cand=[];const seen=new Set();
    escape:pick.br?`遇到${pn}方接应子 ${gtp(pick.br)} → 征子不成立,追方${cn}不利`:'逃出重围 → 征子不成立,追方'+cn+'不利',noatari:'追方无法继续叫吃 → 征子不成立,追方'+cn+'不利',cap60:'超过60步未决'})[pick.out]}
  drawBoard()}
 function draw(){panel(drawBoard())}
-function nextCol(n){const pl=(n.p.PL||[''])[0];if(pl)return pl=='B'?1:2;for(let x=n;x;x=x.up)if(x.p.B||x.p.W)return x.p.B?2:1;return 1}
+function anOf(n){const l=window.RC&&RC.live(n);return l?l.an:(n.c.length?(n.p.AN||[''])[0]:'')} // candidate-point data: live results from the compute switch take priority, otherwise use the cached AN
+function nextCol(n){const lv=window.RC&&RC.live(n);if(lv)return lv.pl=='B'?1:2;const pl=(n.p.PL||[''])[0];if(pl)return pl=='B'?1:2;for(let x=n;x;x=x.up)if(x.p.B||x.p.W)return x.p.B?2:1;return 1} // live analysis knows the side to move (pl), so prefer it over inferring from the tree
 function drawBoard(){cancelAnimationFrame(raf);const{b,num,last,k}=replay(cur),co=(cur.p.C||[''])[0],cx=ctxInfo(b,co),full=viewMode===2||(viewMode===0&&cx.emph),emph=full&&cx.emph,
  V=full?FULL:view;Vnow=V;const S=cv.width,span=Math.max(V.x1-V.x0,V.y1-V.y0),m=S/(span+1.6),ox=m*.8,oy=m*.8;
  const X=c=>ox+(c-V.x0)*m,Y=r=>oy+(r-V.y0)*m;
@@ -100,7 +106,7 @@ function drawBoard(){cancelAnimationFrame(raf);const{b,num,last,k}=replay(cur),c
  const gl=ghost.length?ghost:hoverG,nc=nextCol(cur);for(let x=V.x0;x<=V.x1;x++)for(let y=V.y0;y<=V.y1;y++)if(b[x][y]){disc(x,y,b[x][y],emph&&x<=LOC.x1&&y>=LOC.y0?.62:1);const n=num.get(x+','+y);if(showN&&n&&!gl.length){g.fillStyle=b[x][y]==1?'#fff':'#111';g.font=`${m*.4}px sans-serif`;g.fillText(n,X(x),Y(y)+1)}}
  if(last){g.strokeStyle='#e33';g.lineWidth=2.5;g.beginPath();g.arc(X(last[0]),Y(last[1]),m*.47,0,7);g.stroke()}
  // AI 局部候选 (AN: sgf:相对最佳目差:先验)
- candPts=[];if(showAI&&cur.c.length)(cur.p.AN||[''])[0].split(';').filter(Boolean).forEach(s=>{const[v,l,p,wr,vis,pv]=s.split(':'),q=pt(v);if(!q||b[q[0]][q[1]])return;const loss=+l,col=loss>-0.3?'#2e8b57':loss>-1.5?'#e6a028':'#c0392b',x=X(q[0]),y=Y(q[1]);
+ candPts=[];if(showAI)anOf(cur).split(';').filter(Boolean).forEach(s=>{const[v,l,p,wr,vis,pv]=s.split(':'),q=pt(v);if(!q||b[q[0]][q[1]])return;const loss=+l,col=loss>-0.3?'#2e8b57':loss>-1.5?'#e6a028':'#c0392b',x=X(q[0]),y=Y(q[1]);
   candPts.push({q,loss,p:+p,vis,pv:(pv||'').split(' ').filter(Boolean)});
   g.globalAlpha=.55;g.beginPath();g.arc(x,y,m*.38,0,7);g.fillStyle=nc==1?'#111':'#f4f4f4';g.fill();g.globalAlpha=1;g.lineWidth=3.5;g.strokeStyle=col;g.stroke();
   g.font=`bold ${m*.3}px sans-serif`;const t=loss>-0.05?'最优':loss.toFixed(1);g.lineWidth=3;g.strokeStyle='rgba(255,255,255,.9)';g.strokeText(t,x,y+m*.66);g.fillStyle='#000';g.fillText(t,x,y+m*.66)});
@@ -112,7 +118,7 @@ function drawBoard(){cancelAnimationFrame(raf);const{b,num,last,k}=replay(cur),c
  // 周边外势光环
  if(emph&&cx.stones.length){const p=.5+.5*Math.sin(Date.now()/280);cx.stones.forEach(([c,r])=>{g.fillStyle=`rgba(255,140,0,${.12+.12*p})`;g.beginPath();g.arc(X(c),Y(r),m*(.62+.08*p),0,7);g.fill();g.strokeStyle=`rgba(255,120,0,${.6+.4*p})`;g.lineWidth=3+2*p;g.beginPath();g.arc(X(c),Y(r),m*(.55+.08*p),0,7);g.stroke()});raf=requestAnimationFrame(drawBoard)}
  // 说明条 / 按钮
- const cap=$('cap'),parts=[];if(emph)parts.push('周边: '+(cx.hits.length?cx.hits.join(' / '):'外围有子')+(cx.stones.length?` · 外围子${cx.stones.length}`:''));if(ladderMsg)parts.push(ladderMsg);if(candPts.length)parts.push('半透明棋子=AI候选(颜色=该方行棋) · 圈色/数字=比局部最优差几目(绿≥-0.3) · 蓝虚线圈+序号=老师在视频里走的变化(对应右侧列表) · 悬停看AI变化,点击固定');
+ const cap=$('cap'),parts=[];if(emph)parts.push('周边: '+(cx.hits.length?cx.hits.join(' / '):'外围有子')+(cx.stones.length?` · 外围子${cx.stones.length}`:''));if(ladderMsg)parts.push(ladderMsg);if(window.RC&&RC.live(cur))parts.push(RC.cap(cur));if(candPts.length)parts.push('半透明棋子=AI候选(颜色=该方行棋) · 圈色/数字=比局部最优差几目(绿≥-0.3) · 蓝虚线圈+序号=老师在视频里走的变化(对应右侧列表) · 悬停看AI变化,点击固定 · 悬停蓝圈=预览老师该分支的后续(序号从1起, 紫色 n-a 圈=进入后才出现的下一层)');
  cap.textContent=parts.join('  ┃  ');cap.style.display=parts.length?'block':'none';$('bl').style.display=cx.hits.includes('征子')?'':'none';
  $('bf').textContent='视角:'+VM[viewMode];
  return k}
@@ -121,15 +127,15 @@ function panel(k){const co=(cur.p.C||[''])[0],box=$('cm');box.innerHTML='';
  secs.forEach(s=>{const mt=/^【([^】]+)】/.exec(s),h=mt?mt[1].replace(/\s*@\S+/,''):'',cls=h.includes('要点')?'kp':h.includes('周边')?'ctx':h.includes('AI')?'ai':'';let body=((mt&&/@\S+/.test(mt[1])?'@'+/@(\S+)/.exec(mt[1])[1]+' ':'')+(mt?s.slice(mt[0].length):s)).trim();
   body=body.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/⟨([^⟩]+)⟩/g,(a,t)=>{const ps=t.trim().split(/\s+/);return ps.length>1?`<span class="chip pv" data-pv="${ps.join(' ')}">${ps[0]}…${ps.length}手</span>`:`<span class="chip" data-pv="${ps[0]}">${ps[0]}</span>`}).replace(/@(?:(\d+)\|)?(\d+):(\d\d)/g,(a,v,mm,ss)=>`<span class="t" data-v="${v||0}" data-t="${+mm*60+ +ss}">▶${v?'视频'+(+v+1)+' ':''}${mm}:${ss}</span>`);
   box.insertAdjacentHTML('beforeend',`<div class="card ${cls}">${h?`<h5>${h}</h5>`:''}${body}</div>`)});
- if(cur.c.length>=2&&!(cur.p.AN||[''])[0])box.insertAdjacentHTML('beforeend','<div class="card ai"><h5>AI局部评估</h5>本分组的 AI 分析正在用修正后的方法重新生成(旧结果因分数视角错误已撤下),完成后这里会显示候选点与老师着法的目数对比。</div>');
+ if(cur.c.length>=2&&!anOf(cur))box.insertAdjacentHTML('beforeend','<div class="card ai"><h5>AI局部评估</h5>本分组的 AI 分析正在用修正后的方法重新生成(旧结果因分数视角错误已撤下),完成后这里会显示候选点与老师着法的目数对比。</div>');
  // 变化列表
- const vs=$('vars');vs.innerHTML='';cur.c.forEach((c,i)=>{const bt=document.createElement('button'),mv=c.p.B||c.p.W,q=mv&&pt(mv[0]),an=(cur.p.AN||[''])[0].split(';').find(s=>s.startsWith(mv?mv[0]+':':'#'));
+ const vs=$('vars');vs.innerHTML='';cur.c.forEach((c,i)=>{const bt=document.createElement('button'),mv=c.p.B||c.p.W,q=mv&&pt(mv[0]),an=anOf(cur).split(';').find(s=>s.startsWith(mv?mv[0]+':':'#'));
   const kp=((c.p.C||[''])[0].match(/【要点与考量】([^\n]*)/)||[])[1]||'',al=an?+an.split(':')[1]:null;
   bt.textContent=`${i+1}. ${c.p.B?'●':'○'} ${q&&q[0]<N?gtp(q):'脱先/他处'}${al===null?'':al>-0.05?'  AI最优':'  AI '+al.toFixed(1)+'目'}${kp?'  '+kp.slice(0,22):''}`;bt.onclick=()=>go(c);if(i==sel)bt.classList.add('on');vs.appendChild(bt)});
  // 手顺
  const ns=[];for(let n=cur;n;n=n.up)ns.unshift(n);$('path').innerHTML='';ns.forEach((n,i)=>{const mv=n.p.B||n.p.W;if(!mv)return;const s=document.createElement('span'),q=pt(mv[0]);s.textContent=`${i}.${n.p.B?'●':'○'}${gtp(q)}`;if(n===cur)s.className='cur';s.onclick=()=>go(n);$('path').appendChild(s)});
  $('info').textContent=`第${k}手 · ${cur.c.length?cur.c.length+'个后续':'终点'}`}
-function go(n){cur=n;sel=0;hot=[];ghost=[];ladderMsg='';draw()}
+function go(n){cur=n;sel=0;hot=[];ghost=[];ladderMsg='';draw();window.RC&&RC.onGo()} // let the compute switch auto-analyze the new node
 // ---- 交互 ----
 $('cm').onclick=e=>{const t=e.target;if(t.dataset.t!==undefined){open(`https://www.bilibili.com/video/${col.vb[+t.dataset.v]||col.vb[0]}?t=${t.dataset.t}`)}
  else if(t.dataset.pv){document.querySelectorAll('.chip').forEach(c=>c.classList.remove('hot'));t.classList.add('hot');const ps=t.dataset.pv.split(' ').map(fromGtp).filter(Boolean);hot=[];ghost=[];ladderMsg='';if(ps.length>1)ghost=ps;else hot=ps;drawBoard()}};
@@ -140,7 +146,7 @@ cv.onmouseleave=()=>{tip.style.display='none';if(hoverG.length){hoverG=[];drawBo
 cv.onclick=e=>{const r=cv.getBoundingClientRect(),V=Vnow,span=Math.max(V.x1-V.x0,V.y1-V.y0),m=r.width/(span+1.6),x=Math.round((e.clientX-r.left-.8*m)/m)+V.x0,y=Math.round((e.clientY-r.top-.8*m)/m)+V.y0;
  const c=cur.c.find(c=>{const q=pt((c.p.B||c.p.W||[''])[0]);return q&&q[0]==x&&q[1]==y});if(c){go(c);return}
  const cd=candPts.find(c=>c.q[0]==x&&c.q[1]==y);if(cd){ghost=cd.pv.map(fromGtp).filter(Boolean);hot=[];drawBoard();return}
- const key=gtp([x,y]);document.querySelectorAll('.chip').forEach(c=>{const h=c.dataset.pv.split(' ').includes(key);c.classList.toggle('hot',h);if(h)c.scrollIntoView({block:'nearest'})})};
+ const key=gtp([x,y]);document.querySelectorAll('.chip').forEach(c=>{const h=c.dataset.pv.split(' ').includes(key);c.classList.toggle('hot',h);if(h)c.scrollIntoView({block:'nearest'})});window.RC&&RC.click(x,y)}; // compute switch: trial move on an empty point
 const nav={b0:()=>go(tree),b1:()=>cur.up&&go(cur.up),b2:()=>cur.c[sel]&&go(cur.c[sel]),b3:()=>{let n=cur;while(n.c[0])n=n.c[0];go(n)}};
 for(const k in nav)$(k).onclick=nav[k];$('bn').onclick=()=>{showN=!showN;draw()};$('bf').onclick=()=>{viewMode=(viewMode+1)%3;draw()};$('bl').onclick=ladderDemo;$('ba').onclick=()=>{showAI=!showAI;draw()};$('bk').onclick=()=>navigator.clipboard.writeText(col.sgf);
 onkeydown=e=>{if(e.target.tagName==='INPUT')return;const k=e.key;if(k==='ArrowLeft')nav.b1();else if(k==='ArrowRight')nav.b2();else if(k==='ArrowUp'){sel=Math.max(0,sel-1);panel()}else if(k==='ArrowDown'){sel=Math.min(cur.c.length-1,sel+1);panel()}else if(k==='Home')nav.b0();else if(k==='End')nav.b3()};
@@ -152,4 +158,81 @@ function renderList(){const q=$('q').value.trim(),s=$('src').value,box=$('list')
 $('src').onchange=$('q').oninput=renderList;renderList();
 {$('ver').textContent='界面 v3 · 数据 '+(window.LIBT||'旧缓存?');const M=LIB.length,D=LIB.filter(c=>c.sgf.length>1500).length,pg=$('prog');if(D<M){pg.style.display='block';pg.textContent=`内容生成中: ${D}/${M} 个定式已完成`}
  open_(LIB.slice().sort((a,b)=>b.sgf.length-a.sgf.length)[0])}
-</script></body></html>
+</script>
+<script>
+// ---- Compute switch: default is cache (keeps using the generated AI data, no network at all); only local/remote mode connects to remote/katago_bridge.py ----
+// Perspective rule as in the offline pipeline: the bridge forces reportAnalysisWinratesAs=BLACK and declares it in the response; here it is converted to the side to move's perspective, only the teaching region is searched, and only the point loss is shown.
+window.RC=(()=>{
+ const KEY='josekiapp.rc.v1',S={mode:'off',auto:false,ep:{local:'http://127.0.0.1:8787',remote:''},tok:{local:'',remote:''}};
+ try{const o=JSON.parse(localStorage.getItem(KEY)||'null');if(o){if(['off','local','remote'].includes(o.mode))S.mode=o.mode;S.auto=!!o.auto;Object.assign(S.ep,o.ep||{});Object.assign(S.tok,o.tok||{})}}catch(e){}
+ const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}};
+ let st={ok:false,msg:'',rtt:null,info:null},ctl=null,reg=null,nbusy=0,err='';
+ const on=()=>S.mode!=='off',EP=()=>(S.ep[S.mode]||'').trim().replace(/\/+$/,''),TK=()=>S.tok[S.mode]||'',LAB={off:'缓存',local:'本机',remote:'远程'};
+ const live=n=>on()&&n&&n.live&&n.live.mode===S.mode?n.live:null;
+ async function call(path,body,ms,sig){const c=new AbortController(),t=setTimeout(()=>c.abort(),ms);if(sig)sig.addEventListener('abort',()=>c.abort());
+  try{const r=await fetch(EP()+path,{method:body?'POST':'GET',cache:'no-store',signal:c.signal,headers:Object.assign({Authorization:'Bearer '+TK()},body?{'Content-Type':'application/json'}:{}),body:body?JSON.stringify(body):undefined});
+   const j=await r.json().catch(()=>null);if(!r.ok)throw new Error((j&&j.error)||'HTTP '+r.status);return j}
+  catch(e){if(e.name==='AbortError')throw new Error(sig&&sig.aborted?'已取消':'超时');if(e instanceof TypeError)throw new Error('无法连接(桥未启动 / 地址错 / CORS 来源未放行 / https 页面连 http 地址)');throw e} // fetch() rejects with TypeError on network/CORS failures
+  finally{clearTimeout(t)}}
+ function paint(){const b=st.info||{};$('rcd').className=!on()?'':nbusy?'busy':st.ok?'ok':st.msg==='连接中…'?'':'bad';
+  $('rcs').textContent=LAB[S.mode]+(on()?(nbusy?' · 分析中…':st.ok?' · '+st.rtt+'ms':' · 未连接'):'');
+  $('rce').disabled=$('rct').disabled=$('rcc').disabled=!on();$('rca').disabled=!on()||!st.ok;
+  $('rcn').textContent=!on()?'默认使用已生成的 AI 数据,不联网。选"本机/远程"后可实时分析当前局面,或点击棋盘空点试下(需先启动 katago_bridge.py,见 remote/README.md)。'
+   :(st.ok?`已连接 · ${st.rtt}ms · KataGo ${(b.katago&&b.katago.version)||'?'} · ${b.model||''}${b.fake?' · 模拟数据(非真实AI)':''}`:'未连接'+(st.msg?':'+st.msg:'')+' → 自动使用缓存数据')+(err?'\n⚠ '+err:'')}
+ function sync(){$('rcm').value=S.mode;$('rce').value=S.ep[S.mode]||'';$('rct').value=S.tok[S.mode]||'';$('rcu').checked=S.auto;$('rcn').style.whiteSpace='pre-wrap'}
+ async function test(){err='';if(!on()){st={ok:false,msg:''};return paint()}
+  if(!EP()){st={ok:false,msg:'请先填写桥接地址'};return paint()}
+  if(!TK()){st={ok:false,msg:'请填写 token(启动 katago_bridge.py 时会打印)'};return paint()}
+  st={ok:false,msg:'连接中…'};paint();const t0=performance.now();
+  try{const j=await call('/health',null,8000),b=j.bridge||{};if(b.winratesAs!=='BLACK')throw new Error('服务端没有声明 winratesAs=BLACK,为避免视角错误已拒绝使用');
+   st={ok:true,rtt:Math.round(performance.now()-t0),info:b,msg:''}}catch(e){st={ok:false,msg:e.message}}
+  paint();onGo()}
+ function onGo(){if(S.auto&&on()&&st.ok&&cur&&!live(cur)&&!cur.busy&&!(cur.c.length&&(cur.p.AN||[''])[0]))analyze(cur)} // auto-analyze only nodes with neither live nor cached AI data
+ // region: same as analyze2.region (3%~97% percentile of all stones in this group, +-2 lines, snapped to the edge when close)
+ function region(){if(reg&&reg.t===tree)return reg.r;const set=new Set();
+  (function w(n){for(const k of['AB','AW','B','W'])(n.p[k]||[]).flatMap(expand).forEach(v=>{const q=pt(v);if(q&&q[0]<N)set.add(q[0]+','+q[1])});n.c.forEach(w)})(tree);
+  const cs=[...set].map(s=>s.split(',').map(Number)),xs=cs.map(c=>c[0]).sort((a,b)=>a-b),ys=cs.map(c=>c[1]).sort((a,b)=>a-b),pc=(a,p)=>a[Math.min(a.length-1,Math.floor(a.length*p))];
+  let x0=Math.max(0,pc(xs,.03)-2),x1=Math.min(17,pc(xs,.97)+2),y0=Math.max(0,pc(ys,.03)-2),y1=Math.min(18,pc(ys,.97)+2);
+  if(x0<=3)x0=0;if(y1>=15)y1=18;if(x1>=14)x1=17;if(y0<=3)y0=0;
+  const list=[];for(let c=x0;c<=x1;c++)for(let r=y0;r<=y1;r++)list.push(gtp([c,r]));return(reg={t:tree,r:{list,set:new Set(list)}}).r}
+ // write the position "from the root to this node" as a KataGo analysis query (setup = board after the last AB/AW/AE; later moves listed one by one, tenuki = pass)
+ function query(node,visits,id){const R=region(),path=[];for(let n=node;n;n=n.up)path.unshift(n);let si=-1;
+  path.forEach((n,i)=>{if(['AB','AW','AE'].some(k=>n.p[k]&&n.p[k].length))si=i});
+  const ini=[],mv=[];if(si>=0){const{b}=replay(path[si]);for(let x=0;x<N;x++)for(let y=0;y<N;y++)if(b[x][y])ini.push([b[x][y]==1?'B':'W',gtp([x,y])])}
+  for(let i=si+1;i<path.length;i++)for(const k of['B','W'])if(path[i].p[k]){const q=pt(path[i].p[k][0]);mv.push([k,q&&q[0]<N?gtp(q):'pass'])}
+  const q={id,initialStones:ini,moves:mv,rules:'japanese',komi:6.5,boardXSize:19,boardYSize:19,analyzeTurns:[mv.length],maxVisits:visits,
+   allowMoves:[{player:'B',moves:R.list,untilDepth:40},{player:'W',moves:R.list,untilDepth:40}]};
+  if(!mv.length)q.initialPlayer=nextCol(node)==1?'B':'W';return q}
+ // Black's perspective -> side to move's perspective (same as analyze2.run)
+ function conv(d){const b=d.bridge||{};if(b.winratesAs!=='BLACK')throw new Error('响应没有声明黑方视角,已拒绝(避免视角错误)');
+  if(!d.rootInfo||!d.moveInfos||!d.moveInfos.length)throw new Error('响应里没有候选点');
+  const t=d.rootInfo.currentPlayer,sg=t=='B'?1:-1;
+  return{t,score:sg*d.rootInfo.scoreLead,wr:t=='B'?d.rootInfo.winrate:1-d.rootInfo.winrate,fake:!!b.fake,
+   cand:d.moveInfos.slice().sort((a,c)=>a.order-c.order).slice(0,14).map(m=>({m:m.move,v:m.visits,s:sg*m.scoreLead,wr:t=='B'?m.winrate:1-m.winrate,p:m.prior,pv:m.pv.slice(0,8)}))}}
+ async function analyze(n,force){if(!on()||!st.ok||!n||(!force&&(live(n)||n.busy)))return;err='';
+  if(ctl)ctl.abort();const my=ctl=new AbortController();n.busy=1;nbusy++;paint();const t0=performance.now();
+  try{const R=region(),d=await call('/analyze',query(n,220,'a'),90000,my.signal),P=conv(d),cand=P.cand.slice(),tv=Math.max(...cand.map(x=>x.v)),need=[];
+   // if the main search gave no reliable visit count for a teacher move (< max(10, 10% of max)), evaluate it separately and forced (position after the move, negated from the opponent's perspective); same as analyze2 phase 2
+   n.c.forEach(c=>{const mv=c.p.B||c.p.W,q=mv&&pt(mv[0]);if(!q||q[0]>=N)return;const m=gtp(q);if(!R.set.has(m))return;const cm=cand.find(x=>x.m===m);if(cm&&cm.v>=Math.max(10,.1*tv))return;need.push([c,m])});
+   const fr=[];let k=0;await Promise.all([0,1,2].map(async()=>{while(k<need.length){const[c,m]=need[k++];fr.push([m,conv(await call('/analyze',query(c,100,'f'),90000,my.signal))])}}));  // at most 3 concurrent requests, so the bridge is not overwhelmed
+   fr.forEach(([m,f])=>cand.push({m,v:100,s:-f.score,wr:1-f.wr,p:-1,pv:[m].concat(f.cand[0].pv.slice(0,7)),f:1}));
+   // best = max side-to-move score among the reliable candidates (visits >= max(5, 8% of max)) and the forced-evaluated moves; the rest show "points worse than best"
+   const rel=cand.filter(x=>x.f||x.v>=Math.max(5,.08*tv)),best=Math.max(...rel.map(x=>x.s));
+   const an=rel.map(x=>{const q=fromGtp(x.m);return q?String.fromCharCode(97+q[0],97+q[1])+':'+(x.s-best).toFixed(1)+':'+x.p.toFixed(2)+':'+Math.round(x.wr*100)+':'+x.v+':'+x.pv.join(' '):''}).filter(Boolean).join(';');
+   n.live={mode:S.mode,pl:P.t,an,vis:220,ms:Math.round(performance.now()-t0),fake:P.fake};if(cur===n)draw()}
+  catch(e){if(e.message!=='已取消'){err='实时分析失败,已显示缓存数据:'+e.message}}
+  finally{n.busy=0;nbusy=Math.max(0,nbusy-1);paint()}}
+ return{live,
+  cap:n=>{const l=n.live;return`实时分析(${LAB[l.mode]}${l.fake?' · 模拟数据':''}) · ${l.vis}次 · ${(l.ms/1000).toFixed(1)}秒 · 只搜局部区域,颜色=行棋方`},
+  onGo,
+  click(x,y){if(!on()||!st.ok||x<0||y<0||x>=N||y>=N)return;const{b}=replay(cur);if(b[x][y])return;
+   if(!region().set.has(gtp([x,y]))){err='该点在讲解区域之外,不做局部分析';return paint()}
+   const c=nextCol(cur),tmp={p:{[c==1?'B':'W']:[String.fromCharCode(97+x,97+y)]},c:[],up:cur};
+   if(replay(tmp).b[x][y]!==c){err='该点不能下(自杀)';return paint()}
+   go(tmp);if(!tmp.busy)analyze(tmp,true)},   // play this move as a trial and analyze the opponent's replies in the new position
+  init(){sync();paint();
+   $('rcm').onchange=()=>{S.mode=$('rcm').value;save();st={ok:false,msg:''};err='';sync();paint();if(on())test();else draw()};
+   $('rce').onchange=()=>{S.ep[S.mode]=$('rce').value.trim();save();test()};$('rct').onchange=()=>{S.tok[S.mode]=$('rct').value;save();test()};
+   $('rcu').onchange=()=>{S.auto=$('rcu').checked;save()};$('rcc').onclick=test;$('rca').onclick=()=>analyze(cur,true);
+   if(on())test()}}
+})();RC.init();
