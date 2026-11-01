@@ -203,3 +203,23 @@ class Manifest:
     def all(self):
         with self.lock:
             return self._load()
+
+
+def single_instance(path):
+    """Take an exclusive lock on `path` for the life of the process. Returns the open file (keep it referenced) or None if
+    another process already holds it. The OS drops the lock when the process dies, so a crash never leaves a stale lock
+    behind. Two pipelines at once would fight over downloads, the GPU and the same output files."""
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    f = open(path, 'a+b')
+    try:
+        f.seek(0)
+        if os.name == 'nt':
+            import msvcrt
+            msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        f.close()
+        return None
+    return f

@@ -130,3 +130,36 @@ def test_log_writes_utf8_file_and_survives_a_console_that_cannot_encode(tmp_path
     log = wqutil.Log(lambda: str(logf))
     log("下载失败", 3)  # must not raise even though stdout is strict ascii
     assert "下载失败 3" in logf.read_text(encoding="utf-8")
+
+
+def test_single_instance_lock_is_exclusive_and_not_left_behind_by_a_crash(tmp_path):
+    import subprocess
+    import sys
+    from conftest import PIPELINE
+    lock = str(tmp_path / "sub" / "x.lock")
+    code = ("import sys, time; sys.path.insert(0, %r); import wqutil; f = wqutil.single_instance(%r); "
+            "print(f is not None, flush=True); time.sleep(60)") % (PIPELINE, lock)
+    p = subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.PIPE, text=True)
+    try:
+        assert p.stdout.readline().strip() == "True"
+        assert wqutil.single_instance(lock) is None, "a second instance must not get the lock"
+    finally:
+        p.kill()
+        p.wait()
+    f = wqutil.single_instance(lock)   # the holder was killed: the OS released the lock, nothing stale
+    assert f is not None
+    f.close()
+
+
+def test_orch2_refuses_to_start_twice(tmp_path):
+    import subprocess
+    import sys
+    from conftest import PIPELINE
+    work = tmp_path / "work"
+    work.mkdir()
+    held = wqutil.single_instance(str(work / "orch2.lock"))
+    assert held is not None
+    env = dict(os.environ, WEIQI_WORK=str(work), WEIQI_PROJ=str(tmp_path / "nowhere"), PYTHONUTF8="1")
+    r = subprocess.run([sys.executable, os.path.join(PIPELINE, "orch2.py")], env=env, capture_output=True, text=True, encoding="utf-8")
+    held.close()
+    assert r.returncode == 1 and "already running" in r.stdout

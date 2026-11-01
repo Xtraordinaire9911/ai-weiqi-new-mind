@@ -35,8 +35,8 @@ def cmd_status(a):
     for p in rows:
         r = read_json(p, default={})
         s, an, kp = r.get('sgf', {}), r.get('analysis', {}), r.get('key_points', {})
-        print('%-34s %5s nodes | analysis %-10s | notes %-9s %3s | sgf %s AI-nodes %s notes %s | %s%s' % (
-            r.get('group', os.path.basename(p)), r.get('nodes', '?'), an.get('status', '?'), kp.get('status', '?'), kp.get('notes', ''),
+        print('%-34s %5s nodes | analysis %-10s | notes %-9s %s/%s | sgf %s AI-nodes %s notes %s | %s%s' % (
+            r.get('group', os.path.basename(p)), r.get('nodes', '?'), an.get('status', '?'), kp.get('status', '?'), kp.get('notes', '?'), kp.get('wanted', '?'),
             'written' if s.get('written') else 'NOT WRITTEN', s.get('an', '?'), s.get('kp', '?'), r.get('time', ''),
             ' | PARTIAL, missing videos %s' % r['missing_videos'] if r.get('missing_videos') else ''))
         if s and not s.get('written'):

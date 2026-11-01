@@ -66,3 +66,17 @@ def test_validate_command(tmp_path, capsys):
 
 def test_fix_check_command():
     assert wq.main(["fix-check"]) == 0
+
+
+def test_missing_key_point_notes_are_visible_in_status(toy, capsys):
+    """Incident: helpers that were supposed to write kp files could not, and nothing showed it."""
+    import json
+    long_text = "白棋这里压一手然后黑棋长出来双方的配合和周边的子力决定了接下来的走法" * 2
+    with open(os.path.join(toy.W, "v", "1", "t.json"), "w", encoding="utf-8") as f:
+        json.dump([{"s": 1.4, "e": 2.4, "t": long_text}, {"s": 4.0, "e": 5.0, "t": long_text}, {"s": 9.0, "e": 9.9, "t": long_text}], f, ensure_ascii=False)
+    toy.o.stageB("toy-group", [1])
+    rep = read_json(os.path.join(toy.W, "status_toy-group.json"))
+    assert rep["key_points"]["wanted"] >= 2 and rep["key_points"]["notes"] == 0
+    assert "key point notes for" in open(os.path.join(toy.W, "logs", "orch2.log"), encoding="utf-8").read()
+    wq.main(["status", "--work", toy.W])
+    assert "0/%d" % rep["key_points"]["wanted"] in capsys.readouterr().out

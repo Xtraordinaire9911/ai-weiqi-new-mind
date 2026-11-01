@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from treesync import tree_fingerprint,check_analysis,check_kp,kp_ident,USABLE
 import sgfcheck,fixtext
 from collections import Counter
-from wqutil import atomic_write_json,atomic_write_text,read_json,find_ffmpeg,setup_stdio,utf8_env,Log,Manifest,retry_with_backoff   # atomic outputs: a kill mid-write must not leave partial files
+from wqutil import atomic_write_json,atomic_write_text,read_json,find_ffmpeg,setup_stdio,utf8_env,Log,Manifest,retry_with_backoff,single_instance   # atomic outputs: a kill mid-write must not leave partial files
 # Dirs come from env vars when set (tests, another machine); the defaults are the original Windows paths.
 HERE=os.path.dirname(os.path.abspath(__file__))   # sibling scripts (tr.py, board.py, analyze2.py) are looked up here, not in a hard coded dir
 W=os.environ.get('WEIQI_WORK',r'D:\tmp\work');V=os.environ.get('WEIQI_VID',r'D:\tmp\vid')
@@ -312,6 +312,9 @@ def stageB(name,idxs,visits=150,force=False,planned=None,dry=False):
     rep['key_points']={'status':kst,'message':kmsg,'notes':len(KP)}
     if not os.path.exists(os.path.join(W,'fixdict.json')):log('B WARN',name,'no fixdict.json in',W,'- only the built in typo rules are used')
     sgf=merge(N,A,idxs,name,summ,KP)
+    rep['key_points']['wanted']=len(DUMP)   # nodes with enough teacher text to deserve a note (the kpin dump)
+    if len(DUMP) and len(KP)<0.5*len(DUMP):log('B WARN',name,'only',len(KP),'key point notes for',len(DUMP),'nodes that have teacher text - was the kp file written?')
+    if isinstance(A.get('_meta'),dict) and A['_meta'].get('errors'):rep['analysis']['errors']=A['_meta']['errors'];log('B WARN',name,A['_meta']['errors'],'analysis queries returned an error')
     put(atomic_write_json,os.path.join(W,'fixlog_'+safe+'.json'),dict(FIRED.most_common()),ensure_ascii=False,indent=1)   # which typo rules fired, for review
     log('B typo rules fired',sum(FIRED.values()),'times; most used:',fixtext.top(FIRED));FIRED.clear()
     put(atomic_write_json,os.path.join(W,'kpin_'+safe+'.json'),DUMP[:],ensure_ascii=False);DUMP.clear()
@@ -364,4 +367,7 @@ def run_pipeline(workers=2):
     return built
 if __name__=='__main__':
     setup_stdio()
+    lock=None if os.environ.get('WEIQI_NO_LOCK') else single_instance(os.path.join(W,'orch2.lock'))   # held until the process ends
+    if not os.environ.get('WEIQI_NO_LOCK') and lock is None:
+        log('another orch2.py is already running (lock',os.path.join(W,'orch2.lock'),'), not starting a second one. WEIQI_NO_LOCK=1 skips this check.');sys.exit(1)
     run_pipeline()
