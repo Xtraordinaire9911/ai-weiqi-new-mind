@@ -115,9 +115,9 @@ It checks that the files referenced by `index.html` exist, that JSON files parse
 
 ## 贡献条款 / Contribution terms
 
-代码采用 PolyForm Strict License 1.0.0,我们自己的数据和文档采用 CC BY-NC-ND 4.0,老师的讲解文字不在其中(决定和理由见 [docs/LICENSE-ADVICE.md](docs/LICENSE-ADVICE.md),许可证文件放在单独的 PR 里)。提交 PR 即表示你同意以下几点。
+代码采用 PolyForm Noncommercial License 1.0.0,我们自己的数据和文档采用 CC BY-NC-SA 4.0,老师的讲解文字不在其中(决定和理由见 [docs/LICENSE-ADVICE.md](docs/LICENSE-ADVICE.md),许可证文件放在单独的 PR 里)。提交 PR 即表示你同意以下几点。
 
-The code is under the PolyForm Strict License 1.0.0 and our own data and docs are under CC BY-NC-ND 4.0, with the teacher's commentary excluded (the decision and the reasons are in [docs/LICENSE-ADVICE.md](docs/LICENSE-ADVICE.md), and the license files come in their own pull request). Sending a pull request means you agree to the following.
+The code is under the PolyForm Noncommercial License 1.0.0 and our own data and docs are under CC BY-NC-SA 4.0, with the teacher's commentary excluded (the decision and the reasons are in [docs/LICENSE-ADVICE.md](docs/LICENSE-ADVICE.md), and the license files come in their own pull request). Sending a pull request means you agree to the following.
 
 1. 每个提交都用 `git commit -s` 签署,它会加上一行 `Signed-off-by`。这一行表示你对自己的改动确认了开发者原产地证书(DCO)1.1(https://developercertificate.org/):改动是你自己写的,或者你有权按这些条款提交。
 
@@ -130,10 +130,6 @@ The code is under the PolyForm Strict License 1.0.0 and our own data and docs ar
 3. 你的贡献里不含你无权授权的内容,尤其是老师视频的转写原文和第三方素材。
 
    Your contribution does not contain anything you have no right to license, in particular transcripts of the teacher's videos or third party material.
-
-4. 因为代码许可证本身不允许修改,所以维护者允许你为了准备和提交贡献,在本地修改代码和数据。
-
-   Because the code license does not allow changes by itself, the maintainer permits you to modify the code and data locally for the purpose of preparing and sending a contribution.
 
 这段文字不是法律意见。如果你不同意,请先不要发 PR,开一个 issue 讨论。维护者自己的提交不需要签署。
 
