@@ -24,11 +24,12 @@ def _write_sources(root, groups):
 def orch(tmp_path, monkeypatch):
     proj = tmp_path / "proj"
     work = tmp_path / "work"
-    _write_sources(proj, [["g-one", [1, 2]], ["g-two", [3]], ["g-late", [4, 60]]])
+    _write_sources(proj, [["g-one", [1, 2]], ["g-two", [3]], ["g-late", [4, 5]]])
     monkeypatch.setenv("WEIQI_PROJ", str(proj))
     monkeypatch.setenv("WEIQI_WORK", str(work))
     monkeypatch.setenv("WEIQI_SOURCE", "toy")
     monkeypatch.setenv("WEIQI_SEASON", "7")
+    monkeypatch.setenv("WEIQI_MAX_IDX", "4")
     import orch2
     return importlib.reload(orch2)
 
@@ -47,7 +48,7 @@ def test_import_without_ffmpeg_or_sources_does_not_crash(tmp_path, monkeypatch):
 
 def test_groups_and_paths_follow_env(orch, tmp_path):
     names = [g[0] for g in orch.groups()]
-    assert names == ["g-one", "g-two"], "group with video 60 (> WEIQI_MAX_IDX) must be skipped"
+    assert names == ["g-one", "g-two"], "group with video 5 (> WEIQI_MAX_IDX=4) must be skipped"
     assert orch.D(3) == os.path.join(str(tmp_path / "work"), "v", "3")
     assert orch.sgf_path("g-one") == os.path.join(str(tmp_path / "proj"), "data", "sgf", "toy", "定式大全", "g-one.sgf")
 

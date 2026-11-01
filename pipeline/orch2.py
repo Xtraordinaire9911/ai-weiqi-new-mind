@@ -229,15 +229,31 @@ def merge(N,A,vids,name,summ='',KP={}):
 # ---- 阶段B: 分组 ----
 def sgf_path(name):   # data/sgf/<uploader>/<series>/<group>.sgf; the series folder name comes from plan.json
     return os.path.join(PROJ,'data','sgf',SOURCE,PLAN['series'][str(SEASON)],name+'.sgf')
+def validate_plan():
+    """Problems in index.json / plan.json that would otherwise show up much later as a KeyError or a stray file. Every new uploader brings its own pair of files."""
+    ser=str(SEASON);bad=[]
+    merge_=PLAN.get('merge',{}).get(ser)
+    if merge_ is None:return ['plan.json has no merge list for season %s'%ser]
+    if ser not in PLAN.get('series',{}):bad.append('plan.json has no series name for season %s'%ser)
+    names={}
+    for name,idxs in merge_:
+        if safe_name(name)!=name or not name.strip():bad.append('group name %r is not a usable file name (these characters are not allowed: \\ / : * ? " < > |)'%name)
+        if name in names:bad.append('group name %r appears twice'%name)
+        names[name]=1
+        for i in idxs:
+            if i not in vid:bad.append('group %r: video %s is not in index.json for season %s'%(name,i,ser))
+    return bad
 def groups():
     if SRC_ERR:raise RuntimeError('cannot read index.json/plan.json: '+SRC_ERR)
+    bad=validate_plan()
+    if bad:raise RuntimeError('plan.json does not fit index.json:\n  '+'\n  '.join(bad))
     out=[]
     for name,idxs in PLAN['merge'][str(SEASON)]:
         if any(x>MAXIDX for x in idxs):continue
         out.append((name,idxs))
     return out
-def write_sgf(path,sgf,force=False):
-    """Write sgf unless it is invalid or poorer than the file already there (fewer nodes, less AI data or notes). Returns (written, reasons)."""
+def sgf_decision(path,sgf,force=False):
+    """May sgf replace the file at path? Not when it is invalid or poorer than the file already there (fewer nodes, less AI data or notes). Returns (ok, reasons)."""
     bad=sgfcheck.validate(sgf)
     if bad:return False,['new sgf is invalid: '+'; '.join(bad[:3])]
     if not os.path.isdir(os.path.dirname(path)):return False,['target folder does not exist: '+os.path.dirname(path)]   # a wrong path must not create stray files
@@ -246,7 +262,12 @@ def write_sgf(path,sgf,force=False):
         if not sgfcheck.validate(old):   # a damaged old file may be replaced, a good one only by an equal or richer one
             why=sgfcheck.worse(sgfcheck.metrics(sgf),sgfcheck.metrics(old))
             if why:return False,['would lose data: '+', '.join(why)]
-    atomic_write_text(path,sgf);return True,[]
+    return True,[]
+def write_sgf(path,sgf,force=False):
+    """sgf_decision, then an atomic write when it says yes. Returns (written, reasons)."""
+    ok,why=sgf_decision(path,sgf,force)
+    if ok:atomic_write_text(path,sgf)
+    return ok,why
 ANALYZE_TIMEOUT=float(os.environ.get('WEIQI_ANALYZE_TIMEOUT','21600'))   # seconds; a hung analysis must not block the pipeline for ever
 def run_analysis(base,a2,safe):
     """Run analyze2.py for one group. Its output goes to W/logs/analyze_<group>.log (it used to be captured and thrown away, so progress was invisible)
@@ -259,17 +280,19 @@ def run_analysis(base,a2,safe):
     except subprocess.TimeoutExpired:log('B WARN analyze2 timed out after',ANALYZE_TIMEOUT,'s, the checkpoint is kept and the next run continues')
     except OSError as e:log('B WARN cannot run analyze2:',e)
 def safe_name(name):return re.sub(r'[\\/:*?"<>|]','',name)   # group name -> file name part
-def stageB(name,idxs,visits=150,force=False,planned=None):
+def stageB(name,idxs,visits=150,force=False,planned=None,dry=False):
+    """Build one group. dry=True does everything in memory and writes nothing (not even caches): it only says what would happen to the SGF."""
     safe=safe_name(name);base=os.path.join(W,'g_'+safe)
-    rep={'group':name,'videos':list(idxs),'time':time.strftime('%Y-%m-%d %H:%M:%S')}
+    put=lambda f,*a,**k:None if dry else f(*a,**k)   # every write goes through this
+    rep={'group':name,'videos':list(idxs),'time':time.strftime('%Y-%m-%d %H:%M:%S')}   # one status record per group: status_<group>.json
     if planned and set(planned)-set(idxs):   # some videos of the group failed: the SGF is built from the rest and rebuilt when they arrive
-        rep['missing_videos']=sorted(set(planned)-set(idxs));log('B WARN',name,'is partial, missing videos',rep['missing_videos'])   # one status record per group, see status_<group>.json
-    N=build_tree(idxs);fp=tree_fingerprint(N);atomic_write_json(base+'.n.json',N)
+        rep['missing_videos']=sorted(set(planned)-set(idxs));log('B WARN',name,'is partial, missing videos',rep['missing_videos'])
+    N=build_tree(idxs);fp=tree_fingerprint(N);put(atomic_write_json,base+'.n.json',N)
     rep.update(tree_fp=fp,nodes=sum(1 for n in N if not n['dead']))
     # --- analysis: it must belong to exactly this tree, otherwise redo it (or leave the AI part out); never merge a mismatch
     a2=base+'.a2.json'
     A=read_json(a2,default=None);st,msg=check_analysis(N,A)   # explicit utf-8; a damaged file reads as missing
-    if st not in USABLE and not os.environ.get('NOAN'):
+    if st not in USABLE and not os.environ.get('NOAN') and not dry:
         if st!='missing':log('B',name,'analysis is',st,'-',msg,'-> running it again');os.replace(a2,a2+'.stale')   # keep the old file for inspection, it is never merged
         run_analysis(base,a2,safe)
         A=read_json(a2,default=None);st,msg=check_analysis(N,A)
@@ -284,22 +307,28 @@ def stageB(name,idxs,visits=150,force=False,planned=None):
     KPraw=read_json(kp,default=None);sc=read_json(side,default=None)
     ident=sc if isinstance(KPraw,dict) and '_meta' not in KPraw and isinstance(sc,dict) and os.path.getmtime(kp)>=os.path.getmtime(side) else None
     KP,kst,kmsg,stamp=check_kp(N,KPraw,ident,strict=bool(os.environ.get('WEIQI_STRICT')))
-    if stamp:KPraw['_meta']=stamp;atomic_write_json(kp,KPraw,ensure_ascii=False)   # remember which tree the notes were written for
+    if stamp:KPraw['_meta']=stamp;put(atomic_write_json,kp,KPraw,ensure_ascii=False)   # remember which tree the notes were written for
     if kst not in ('ok','missing'):log('B WARN',name,'key points:',kst,kmsg)
     rep['key_points']={'status':kst,'message':kmsg,'notes':len(KP)}
     if not os.path.exists(os.path.join(W,'fixdict.json')):log('B WARN',name,'no fixdict.json in',W,'- only the built in typo rules are used')
     sgf=merge(N,A,idxs,name,summ,KP)
-    atomic_write_json(os.path.join(W,'fixlog_'+safe+'.json'),dict(FIRED.most_common()),ensure_ascii=False,indent=1)   # which typo rules fired, for review
+    put(atomic_write_json,os.path.join(W,'fixlog_'+safe+'.json'),dict(FIRED.most_common()),ensure_ascii=False,indent=1)   # which typo rules fired, for review
     log('B typo rules fired',sum(FIRED.values()),'times; most used:',fixtext.top(FIRED));FIRED.clear()
-    atomic_write_json(os.path.join(W,'kpin_'+safe+'.json'),DUMP[:],ensure_ascii=False);DUMP.clear()
-    atomic_write_json(side,kp_ident(N))   # which tree this kpin dump describes (used to place the kp notes written from it)
-    done,why=write_sgf(sgf_path(name),sgf,force=force or bool(os.environ.get('WEIQI_FORCE')))
+    put(atomic_write_json,os.path.join(W,'kpin_'+safe+'.json'),DUMP[:],ensure_ascii=False);DUMP.clear()
+    put(atomic_write_json,side,kp_ident(N))   # which tree this kpin dump describes (used to place the kp notes written from it)
+    force=force or bool(os.environ.get('WEIQI_FORCE'))
+    if dry:
+        done,why=sgf_decision(sgf_path(name),sgf,force)
+        log('DRY RUN',name,'-> would',('write' if done else 'REFUSE'),sgf_path(name),'| new',sgfcheck.metrics(sgf),'|','; '.join(why))
+        return done
+    done,why=write_sgf(sgf_path(name),sgf,force=force)
     if not done:   # keep the candidate so the work is not lost, and say loudly why the old file stays
         os.makedirs(os.path.join(W,'rejected'),exist_ok=True);atomic_write_text(os.path.join(W,'rejected',safe+'.sgf'),sgf)
         log('B REFUSED',name,'; '.join(why),'| existing SGF kept, candidate saved in',os.path.join(W,'rejected'),'| WEIQI_FORCE=1 overrides')
     rep['sgf']=dict(sgfcheck.metrics(sgf),written=done,reasons=why)
     atomic_write_json(os.path.join(W,'status_'+safe+'.json'),rep,ensure_ascii=False,indent=1)
     log('B done' if done else 'B NOT written',name,rep['nodes'],'nodes',len(sgf),'chars; analysis',st,'; key points',kst)
+    return done
 def run_pipeline(workers=2):
     G=groups()
     dur={x['idx']:x['sec'] for x in IDX if x['season']==SEASON}
