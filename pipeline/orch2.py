@@ -155,6 +155,13 @@ def esc(s):return s.replace('\\','\\\\').replace(']','\\]')
 def clean_cands(cs):   # keep candidates whose move is a board coordinate; 'pass' or garbage would put an invalid entry into AN[]
     return [dict(m,pv=[x for x in m['pv'] if sgfcheck.GTP.fullmatch(x)]) for m in cs if sgfcheck.GTP.fullmatch(m['m'])]
 DUMP=[]
+# Credit header for every generated SGF root: AP (application), CP (copyright and license line) and SO (source), so the credit travels with the file. Keep the wording in sync with NOTICE.md and tools/build.ps1.
+REPO_URL='https://github.com/Xtraordinaire9911/ai-weiqi-new-mind'
+CREDIT_CP='Based on ai-weiqi-new-mind by Xtraordinaire9911 ('+REPO_URL+'), licensed under PolyForm Noncommercial 1.0.0 (code) and CC BY-NC-SA 4.0 (data and docs). The teacher commentary text belongs to 陈林涛 and is not covered by these licenses.'
+def credit_props():
+    try:ver=open(os.path.join(PROJ,'VERSION'),encoding='utf-8').read().strip()
+    except OSError:ver='unknown'
+    return 'AP[%s]CP[%s]SO[%s]'%(esc('ai-weiqi-new-mind:'+ver),esc(CREDIT_CP),esc(REPO_URL))
 def merge(N,A,vids,name,summ='',KP={}):
     DUMP.clear();FIRED.clear()   # a failed merge of an earlier group must not leak its nodes into this group's kpin dump
     T=[read_json(os.path.join(D(i),'t.json')) for i in vids]
@@ -225,7 +232,7 @@ def merge(N,A,vids,name,summ='',KP={}):
         ch=live(k)
         if len(ch)==1:return s+node(ch[0])
         return s+''.join('('+node(c)+')' for c in ch)
-    return '(;GM[1]FF[4]CA[UTF-8]SZ[19]KM[6.5]GN[%s]PC[%s]%s)'%(esc(name),esc((PLAN.get('name') or SOURCE)+' '+' '.join(vid[i]['bvid'] for i in vids)),node(0))   # GN/PC are escaped like every other text value
+    return '(;GM[1]FF[4]CA[UTF-8]SZ[19]KM[6.5]GN[%s]PC[%s]%s%s)'%(esc(name),esc((PLAN.get('name') or SOURCE)+' '+' '.join(vid[i]['bvid'] for i in vids)),credit_props(),node(0))   # GN/PC are escaped like every other text value; credit_props() escapes its own values
 # ---- 阶段B: 分组 ----
 def sgf_path(name):   # data/sgf/<uploader>/<series>/<group>.sgf; the series folder name comes from plan.json
     return os.path.join(PROJ,'data','sgf',SOURCE,PLAN['series'][str(SEASON)],name+'.sgf')
