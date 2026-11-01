@@ -44,6 +44,8 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
   /* the board: no scroll, zoom or text selection while a finger is on it */
   canvas{touch-action:none;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;width:var(--bs);max-width:100%;max-height:none;cursor:default}
   /* bottom control bar */
+  .bar{overflow-x:auto;scrollbar-width:none}
+  .bar::-webkit-scrollbar{display:none}
   .bar{position:fixed;left:0;right:0;bottom:0;z-index:40;margin:0;gap:4px;flex-wrap:nowrap;justify-content:stretch;padding:6px calc(8px + var(--sar)) calc(6px + var(--sab)) calc(8px + var(--sal));background:var(--pn);border-top:1px solid var(--bd);box-shadow:0 -2px 8px rgba(0,0,0,.08)}
   .bar>button{flex:1 1 0;min-width:44px;min-height:44px;padding:4px 2px;font-size:.8rem;display:inline-flex;align-items:center;justify-content:center;text-align:center;white-space:normal;line-height:1.15;overflow:hidden}
   .bar>button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
