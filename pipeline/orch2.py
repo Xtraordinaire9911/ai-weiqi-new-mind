@@ -81,7 +81,7 @@ DUMP=[]
 REPO_URL='https://github.com/Xtraordinaire9911/ai-weiqi-new-mind'
 CREDIT_CP='Based on ai-weiqi-new-mind by Xtraordinaire9911 ('+REPO_URL+'), licensed under PolyForm Noncommercial 1.0.0 (code) and CC BY-NC-SA 4.0 (data and docs). The teacher commentary text belongs to 陈林涛 and is not covered by these licenses.'
 def credit_props():
-    try:ver=open(PROJ+r'\VERSION',encoding='utf-8').read().strip()
+    try:ver=open(os.path.join(PROJ,'VERSION'),encoding='utf-8').read().strip()
     except OSError:ver='unknown'
     return 'AP[%s]CP[%s]SO[%s]'%(esc('ai-weiqi-new-mind:'+ver),esc(CREDIT_CP),esc(REPO_URL))
 def merge(N,A,vids,name,summ='',KP={}):
