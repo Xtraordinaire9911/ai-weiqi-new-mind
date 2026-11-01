@@ -26,9 +26,9 @@ def other_tree(toy):
 def test_toy_tree_has_the_expected_branch(toy):
     N = toy.N
     live = [n for n in N if not n["dead"]]
-    assert len(live) == 6
+    assert len(live) == 7
     branch = [n for n in live if len([c for c in n["ch"] if not N[c]["dead"]]) == 2]
-    assert [n["id"] for n in branch] == [1]
+    assert [n["id"] for n in branch] == [1, 2]
 
 
 def test_fingerprint_is_stable_and_sees_structure_changes(toy):

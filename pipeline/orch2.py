@@ -190,6 +190,17 @@ def write_sgf(path,sgf,force=False):
             why=sgfcheck.worse(sgfcheck.metrics(sgf),sgfcheck.metrics(old))
             if why:return False,['would lose data: '+', '.join(why)]
     atomic_write_text(path,sgf);return True,[]
+ANALYZE_TIMEOUT=float(os.environ.get('WEIQI_ANALYZE_TIMEOUT','21600'))   # seconds; a hung analysis must not block the pipeline for ever
+def run_analysis(base,a2,safe):
+    """Run analyze2.py for one group. Its output goes to W/logs/analyze_<group>.log (it used to be captured and thrown away, so progress was invisible)
+    and a failure is reported. Progress with ETA is also in <a2>.progress.log; an interrupted run resumes from <a2>.part next time."""
+    lp=os.path.join(W,'logs','analyze_%s.log'%safe);os.makedirs(os.path.dirname(lp),exist_ok=True)
+    try:
+        with open(lp,'ab') as lf:
+            r=subprocess.run([PY,os.path.join(HERE,'analyze2.py'),base+'.n.json',a2,'220','100'],stdout=lf,stderr=subprocess.STDOUT,env=ENV,timeout=ANALYZE_TIMEOUT)
+        if r.returncode:log('B WARN analyze2 exit code',r.returncode,'- see',lp)
+    except subprocess.TimeoutExpired:log('B WARN analyze2 timed out after',ANALYZE_TIMEOUT,'s, the checkpoint is kept and the next run continues')
+    except OSError as e:log('B WARN cannot run analyze2:',e)
 def safe_name(name):return re.sub(r'[\\/:*?"<>|]','',name)   # group name -> file name part
 def stageB(name,idxs,visits=150,force=False):
     safe=safe_name(name);base=os.path.join(W,'g_'+safe)
@@ -201,7 +212,7 @@ def stageB(name,idxs,visits=150,force=False):
     A=read_json(a2,default=None);st,msg=check_analysis(N,A)   # explicit utf-8; a damaged file reads as missing
     if st not in USABLE and not os.environ.get('NOAN'):
         if st!='missing':log('B',name,'analysis is',st,'-',msg,'-> running it again');os.replace(a2,a2+'.stale')   # keep the old file for inspection, it is never merged
-        subprocess.run([PY,os.path.join(HERE,'analyze2.py'),base+'.n.json',a2,'220','100'],capture_output=True,env=ENV)
+        run_analysis(base,a2,safe)
         A=read_json(a2,default=None);st,msg=check_analysis(N,A)
     if st not in USABLE:
         if st!='missing':log('B WARN',name,'analysis not used:',st,msg)
