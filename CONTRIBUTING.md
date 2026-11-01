@@ -26,6 +26,10 @@ This is mostly a one person project, but small fixes from others are welcome: ty
 
    不要提交视频、音频、网络权重、KataGo 可执行文件、令牌或密钥。
 
+6. If you are not the maintainer, sign off every commit with `git commit -s` (see the contribution terms below).
+
+   如果你不是维护者,每个提交都用 `git commit -s` 签署(见下面的贡献条款)。
+
 ## Branch names / 分支命名
 
 | Branch / 分支 | Use it for / 用途 |
@@ -94,9 +98,9 @@ PR 要小而专注。查看器、流水线和数据批次分开提,这样好评�
 
 ## Data and copyright / 数据与版权
 
-The commentary in the SGF files comes from the spoken explanations in videos by the Bilibili uploader Chen Lintao (陈林涛). The copyright belongs to him and not to this project, and no license of this project covers that text. Please do not commit video files, full subtitles, or other people's copyrighted text and images. When you report a content problem, describe where it is and what is wrong. There is no need to paste long passages. Background and options are in [docs/LICENSE-ADVICE.md](docs/LICENSE-ADVICE.md), which is advice only and not a license.
+The commentary in the SGF files comes from the spoken explanations in videos by the Bilibili uploader Chen Lintao (陈林涛). The copyright belongs to him and not to this project, and no license of this project covers that text. It is being moved to a private repository. Please do not commit video files, full subtitles, or other people's copyrighted text and images. When you report a content problem, describe where it is and what is wrong. There is no need to paste long passages. The license decision and its background are in [docs/LICENSE-ADVICE.md](docs/LICENSE-ADVICE.md).
 
-SGF 里的讲解来自 B 站 UP 主陈林涛视频里的口述。版权属于他本人,不属于本项目,本项目的任何许可证也不覆盖这些文字。请不要提交视频文件、完整字幕,或者别人享有版权的文字和图片。报告内容问题时,写清楚在哪里、哪里不对就行,不用贴大段原文。背景和各种选择见 [docs/LICENSE-ADVICE.md](docs/LICENSE-ADVICE.md),那份文档只是建议,不是许可证。
+SGF 里的讲解来自 B 站 UP 主陈林涛视频里的口述。版权属于他本人,不属于本项目,本项目的任何许可证也不覆盖这些文字。这部分文字正在迁移到私有仓库。请不要提交视频文件、完整字幕,或者别人享有版权的文字和图片。报告内容问题时,写清楚在哪里、哪里不对就行,不用贴大段原文。许可证的决定及其背景见 [docs/LICENSE-ADVICE.md](docs/LICENSE-ADVICE.md)。
 
 ## Local checks / 本地检查
 
@@ -109,27 +113,31 @@ It checks that the files referenced by `index.html` exist, that JSON files parse
 
 脚本会检查:`index.html` 引用的文件是否存在,JSON 能否解析,`data/library.js` 是否仍与 SGF 一致(改过 SGF 之后要重新运行 `tools/build.ps1`),SGF 的括号和坐标是否合法,Python 文件能否编译,以及有没有误提交权重、视频或密钥文件。
 
-## Contribution terms (draft) / 贡献条款(草案)
+## Contribution terms / 贡献条款
 
-The project has no license yet, so by default all rights are reserved, and the maintainer is still deciding (see `docs/LICENSE-ADVICE.md`). So that the project can later be put under a clear license, including a separate commercial one, sending a pull request means you agree to this:
+The code is under the PolyForm Strict License 1.0.0 and our own data and docs are under CC BY-NC-ND 4.0, with the teacher's commentary excluded (the decision and the reasons are in [docs/LICENSE-ADVICE.md](docs/LICENSE-ADVICE.md), and the license files come in their own pull request). Sending a pull request means you agree to the following.
 
-项目目前还没有许可证,默认保留所有权利,维护者还在评估(见 `docs/LICENSE-ADVICE.md`)。为了将来能把项目放到一份明确的许可证之下(包括另行提供商业许可),提交 PR 即表示你同意以下几点:
+代码采用 PolyForm Strict License 1.0.0,我们自己的数据和文档采用 CC BY-NC-ND 4.0,老师的讲解文字不在其中(决定和理由见 [docs/LICENSE-ADVICE.md](docs/LICENSE-ADVICE.md),许可证文件放在单独的 PR 里)。提交 PR 即表示你同意以下几点。
 
-1. What the Developer Certificate of Origin 1.1 (https://developercertificate.org/) says is true for your change. Adding a `Signed-off-by` line with `git commit -s` is a good habit.
+1. Sign off every commit with `git commit -s`, which adds a `Signed-off-by` line. That line certifies the Developer Certificate of Origin 1.1 (https://developercertificate.org/) for your change: you wrote it, or you have the right to submit it under these terms.
 
-   开发者原产地证书(DCO)1.1(https://developercertificate.org/)里所陈述的事项,对你的改动都属实。建议养成习惯,用 `git commit -s` 加上 `Signed-off-by` 一行。
+   每个提交都用 `git commit -s` 签署,它会加上一行 `Signed-off-by`。这一行表示你对自己的改动确认了开发者原产地证书(DCO)1.1(https://developercertificate.org/):改动是你自己写的,或者你有权按这些条款提交。
 
-2. You keep the copyright on your contribution and give the maintainer a perpetual, worldwide, royalty free and irrevocable non-exclusive license to use, modify and distribute it under the license the project has now or chooses later, commercial licenses included, and to sublicense it.
+2. You keep the copyright on your contribution. The maintainer may relicense your contribution together with the project, under whatever license the project uses now or later, commercial licenses included.
 
-   你保留自己所贡献内容的版权,同时授予维护者一项永久、全球范围、免版税、不可撤销的非独占许可:维护者可以在项目现在或将来选定的任何许可证下(包括商业许可)使用、修改、分发你的贡献,并可以再许可给他人。
+   你保留自己所贡献内容的版权。维护者可以把你的贡献连同项目一起重新授权,不论项目现在或将来使用哪种许可证,包括商业许可。
 
 3. Your contribution does not contain anything you have no right to license, in particular transcripts of the teacher's videos or third party material.
 
    你的贡献里不含你无权授权的内容,尤其是老师视频的转写原文和第三方素材。
 
-This is a draft and not legal advice. Once a license is chosen the maintainer will replace it with final wording. If you do not agree, please do not send a pull request and open an issue to talk about it first.
+4. Because the code license does not allow changes by itself, the maintainer permits you to modify the code and data locally for the purpose of preparing and sending a contribution.
 
-这只是草案,不是法律意见。许可证确定后,维护者会换成正式的文字。如果你不同意,请先不要发 PR,开一个 issue 讨论。
+   因为代码许可证本身不允许修改,所以维护者允许你为了准备和提交贡献,在本地修改代码和数据。
+
+This text is not legal advice. If you do not agree, please do not send a pull request, and open an issue to talk about it first. The maintainer does not need to sign off their own commits.
+
+这段文字不是法律意见。如果你不同意,请先不要发 PR,开一个 issue 讨论。维护者自己的提交不需要签署。
 
 ## Leaked credentials / 凭据泄露
 
