@@ -12,9 +12,9 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
   分支模型:`main` 放已发布的版本,`develop` 做集成,另有 `feature/<topic>`、`fix/<topic>`、`data/<batch>`、`release/<version>` 和 `hotfix/<topic>`。步骤和命令见 `docs/WORKFLOW.md`。
 
-- `CONTRIBUTING.md` with the commit message style (Conventional Commits, kept short and human), the contribution terms draft, and a `.gitmessage` template.
+- `CONTRIBUTING.md` with the commit message style (Conventional Commits, kept short and human), the contribution terms (DCO sign off plus a relicensing sentence), and a `.gitmessage` template.
 
-  `CONTRIBUTING.md`:提交信息的写法(Conventional Commits,简短、像人写的)、贡献条款草案,以及 `.gitmessage` 模板。
+  `CONTRIBUTING.md`:提交信息的写法(Conventional Commits,简短、像人写的)、贡献条款(DCO 签署加一句重新授权的说明),以及 `.gitmessage` 模板。
 
 - A short pull request template and three issue forms (bug report, content issue, video suggestion).
 
@@ -24,9 +24,9 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
   `tools/check_repo.py`:只需要 Python 3 的本地检查,涵盖 `index.html` 的引用、JSON 文件、`data/library.js` 与 SGF 文件是否一致、SGF 语法、Python 语法、不该提交的文件,以及一个粗略的令牌扫描。
 
-- `docs/LICENSE-ADVICE.md`, license advice that is not in effect (the repository still has no LICENSE file), and `docs/COMPUTE-PLATFORMS.md`, a list of cloud GPU options with notes on LRZ.
+- `docs/LICENSE-ADVICE.md`, the license decision (PolyForm Strict for the code, CC BY-NC-ND for our own data and docs, the teacher's commentary excluded) with the comparison behind it, and `docs/COMPUTE-PLATFORMS.md`, a list of cloud GPU options with notes on LRZ. The LICENSE files themselves come in a separate pull request.
 
-  `docs/LICENSE-ADVICE.md`:尚未生效的许可证建议(仓库仍然没有 LICENSE 文件);`docs/COMPUTE-PLATFORMS.md`:云 GPU 方案清单,附 LRZ 说明。
+  `docs/LICENSE-ADVICE.md`:许可证的决定(代码用 PolyForm Strict,我们自己的数据和文档用 CC BY-NC-ND,老师的讲解文字除外)以及背后的对比分析;`docs/COMPUTE-PLATFORMS.md`:云 GPU 方案清单,附 LRZ 说明。LICENSE 文件本身放在单独的 PR 里。
 
 - The docs are bilingual, an English paragraph followed by its Chinese counterpart.
 
