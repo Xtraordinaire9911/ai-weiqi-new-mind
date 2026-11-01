@@ -1,31 +1,31 @@
-name: Content issue / 内容问题
-description: A wrong variation, a transcription mistake or a doubtful evaluation / 变化图不对、转写有错,或者评估可疑
+name: 内容问题 / Content issue
+description: 变化图不对、转写有错,或者评估可疑 / A wrong variation, a transcription mistake or a doubtful evaluation
 title: "content: "
 labels: ["data"]
 body:
   - type: markdown
     attributes:
       value: |
-        The commentary comes from the teacher's videos and belongs to the original author. Please describe what is wrong instead of pasting long passages.
-
         讲解内容来自老师的视频,版权属于原作者。请描述哪里有问题,不要贴大段原文。
+
+        The commentary comes from the teacher's videos and belongs to the original author. Please describe what is wrong instead of pasting long passages.
   - type: input
     id: group
     attributes:
-      label: Group (SGF file name) / 分组(SGF 文件名)
+      label: 分组(SGF 文件名) / Group (SGF file name)
     validations:
       required: true
   - type: input
     id: where
     attributes:
-      label: Where / 位置
-      description: Move number or variation path, or the time stamp in the comment. / 第几手或变化路径,或者讲解里的时间点。
+      label: 位置 / Where
+      description: 第几手或变化路径,或者讲解里的时间点。 / Move number or variation path, or the time stamp in the comment.
     validations:
       required: true
   - type: textarea
     id: details
     attributes:
-      label: What is wrong and what should it be / 哪里不对,应该是什么
-      description: For evaluations, say which engine, network and number of visits you used. / 如果是评估问题,请说明用的引擎、网络和搜索次数(visits)。
+      label: 哪里不对,应该是什么 / What is wrong and what should it be
+      description: 如果是评估问题,请说明用的引擎、网络和搜索次数(visits)。 / For evaluations, say which engine, network and number of visits you used.
     validations:
       required: true
