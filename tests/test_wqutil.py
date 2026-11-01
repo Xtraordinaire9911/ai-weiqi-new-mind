@@ -104,3 +104,29 @@ def test_read_json_missing(tmp_path):
     with pytest.raises(FileNotFoundError):
         wqutil.read_json(tmp_path / "nope.json")
     assert wqutil.read_json(tmp_path / "nope.json", default=[]) == []
+
+
+def test_setup_stdio_switches_a_gbk_console_to_utf8(monkeypatch):
+    import io
+    import sys
+    raw = io.BytesIO()
+    fake = io.TextIOWrapper(raw, encoding="cp936", write_through=True)  # what a Chinese Windows console gives us
+    monkeypatch.setattr(sys, "stdout", fake)
+    wqutil.setup_stdio()
+    print("定式", flush=True)
+    assert raw.getvalue() == "定式\n".encode("utf-8")
+
+
+def test_utf8_env_sets_python_text_flags():
+    env = wqutil.utf8_env({"X": "1"})
+    assert env["PYTHONUTF8"] == "1" and env["PYTHONIOENCODING"] == "utf-8" and env["X"] == "1"
+
+
+def test_log_writes_utf8_file_and_survives_a_console_that_cannot_encode(tmp_path, monkeypatch):
+    import io
+    import sys
+    logf = tmp_path / "logs" / "o.log"
+    monkeypatch.setattr(sys, "stdout", io.TextIOWrapper(io.BytesIO(), encoding="ascii", errors="strict"))
+    log = wqutil.Log(lambda: str(logf))
+    log("下载失败", 3)  # must not raise even though stdout is strict ascii
+    assert "下载失败 3" in logf.read_text(encoding="utf-8")

@@ -50,3 +50,38 @@ def test_outputs_are_written_atomically(name, tree):
             if ("w" in mode or "x" in mode) and not _is_err_file(node):
                 bad.append("open(..., %r) at line %d" % (mode, node.lineno))
     assert not bad, "%s writes non-atomically, use wqutil.atomic_write_*: %s" % (name, bad)
+
+
+@pytest.mark.parametrize("name,tree", list(_sources()), ids=lambda v: v if isinstance(v, str) else "")
+def test_text_io_names_its_encoding(name, tree):
+    """Incident: json read with the platform default (cp936) instead of utf-8."""
+    if name in LEGACY:
+        pytest.skip("not covered")
+    bad = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        f = node.func
+        kws = {k.arg: k.value for k in node.keywords}
+        if isinstance(f, ast.Name) and f.id == "open":
+            if "b" not in _open_mode(node) and "encoding" not in kws:
+                bad.append("open() without encoding at line %d" % node.lineno)
+        name_ = f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", "")
+        if name_ in ("run", "Popen", "check_output"):
+            text = any(isinstance(kws.get(k), ast.Constant) and kws[k].value is True for k in ("text", "universal_newlines"))
+            if text and "encoding" not in kws:
+                bad.append("subprocess text mode without encoding at line %d" % node.lineno)
+    assert not bad, "%s: %s" % (name, bad)
+
+
+def test_powershell_scripts_with_non_ascii_have_a_bom():
+    """Windows PowerShell 5.1 reads a BOM-less script as ANSI and garbles Chinese text."""
+    tools = os.path.join(os.path.dirname(PIPELINE), "tools")
+    bad = []
+    for f in sorted(glob.glob(os.path.join(tools, "*.ps1"))):
+        data = open(f, "rb").read()
+        if any(b > 127 for b in data) and not data.startswith(b"\xef\xbb\xbf"):
+            bad.append(os.path.basename(f))
+    # sync_pipeline.ps1 has a Chinese comment and no BOM. tools/ is out of scope for this branch,
+    # see docs/PREMORTEM.md. Any new offender fails the test.
+    assert set(bad) <= {"sync_pipeline.ps1"}, "BOM missing: %s" % bad

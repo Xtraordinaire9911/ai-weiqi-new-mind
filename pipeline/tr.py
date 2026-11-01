@@ -1,5 +1,6 @@
 import sys,json,subprocess,numpy as np,glob,os
-from wqutil import atomic_write_json,find_ffmpeg   # atomic: t.json existing must mean it is complete
+from wqutil import atomic_write_json,find_ffmpeg,setup_stdio   # atomic: t.json existing must mean it is complete
+setup_stdio()
 ff=find_ffmpeg()
 if not ff:sys.exit('ffmpeg not found (set FFMPEG=path)')
 from faster_whisper import WhisperModel

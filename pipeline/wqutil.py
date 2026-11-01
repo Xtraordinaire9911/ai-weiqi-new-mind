@@ -1,15 +1,17 @@
-"""Shared helpers for the pipeline scripts: atomic file writes and tolerant json reading.
+"""Shared helpers for the pipeline scripts: atomic file writes, tolerant json reading, utf-8 and logging.
 
 Why this exists: the pipeline gets killed and restarted a lot, and other tools
 (build.ps1, the viewer, a second regen run) read its output while it is being
 written. A half written json or sgf must never be visible, so every output goes
 through atomic_write_*. Reads go through read_json, which copes with a BOM and
-gives an error message that names the file.
+gives an error message that names the file. setup_stdio/utf8_env/Log keep every
+log line and child process on utf-8 (Windows consoles default to cp936).
 """
 import glob
 import json
 import os
 import shutil
+import sys
 import threading
 import time
 
@@ -100,3 +102,51 @@ def find_ffmpeg():
         if hits:
             return hits[0]
     return shutil.which('ffmpeg')
+
+
+def setup_stdio():
+    """Force utf-8 on stdout/stderr.
+
+    A cp936 (GBK) Windows console either garbles Chinese log lines or raises
+    UnicodeEncodeError on characters it cannot show. errors='replace' keeps the
+    process alive in every case. Child processes get the same via utf8_env().
+    """
+    for s in (sys.stdout, sys.stderr):
+        try:
+            s.reconfigure(encoding='utf-8', errors='replace')
+        except (AttributeError, ValueError, OSError):
+            pass  # not a real text stream (pytest capture, pythonw): nothing to fix
+
+
+def utf8_env(extra=None):
+    """Environment for child processes: utf-8 text mode and unbuffered output (so logs show progress live)."""
+    env = dict(os.environ)
+    env.update(PYTHONUTF8='1', PYTHONIOENCODING='utf-8', PYTHONUNBUFFERED='1')
+    if extra:
+        env.update(extra)
+    return env
+
+
+class Log:
+    """print() plus an append-only utf-8 log file. Never raises: a broken console must not kill a worker thread."""
+
+    def __init__(self, path_fn):
+        self.path_fn = path_fn  # a function, so the log dir can still change after import (tests)
+        self.lock = threading.Lock()
+
+    def __call__(self, *a):
+        line = time.strftime('%H:%M:%S ') + ' '.join(str(x) for x in a)
+        try:
+            print(line, flush=True)
+        except (UnicodeError, OSError):
+            try:
+                print(line.encode('ascii', 'replace').decode('ascii'), flush=True)
+            except Exception:
+                pass
+        try:
+            p = self.path_fn()
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            with self.lock, open(p, 'a', encoding='utf-8') as f:
+                f.write(line + '\n')
+        except OSError:
+            pass

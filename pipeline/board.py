@@ -1,5 +1,6 @@
 import sys,json,subprocess,numpy as np
-from wqutil import atomic_write_json   # atomic: b.json existing must mean it is complete
+from wqutil import atomic_write_json,setup_stdio   # atomic: b.json existing must mean it is complete
+setup_stdio()
 W,H=1134,720;X0,Y0,D=248.0,40.0,35.4
 ff=sys.argv[3]
 cmd=[ff,'-v','error','-i',sys.argv[1],'-vf','fps=6,scale=1134:720','-f','rawvideo','-pix_fmt','rgb24','-']

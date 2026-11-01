@@ -1,7 +1,7 @@
 # 无人值守流水线: 视频(下载->转写->识谱) -> 按SGF分组合并树 -> KataGo局部分析 -> 合成带解析SGF
 import json,os,sys,subprocess,glob,re,threading,time,traceback
 from concurrent.futures import ThreadPoolExecutor
-from wqutil import atomic_write_json,atomic_write_text,read_json,find_ffmpeg   # atomic outputs: a kill mid-write must not leave partial files
+from wqutil import atomic_write_json,atomic_write_text,read_json,find_ffmpeg,setup_stdio,utf8_env,Log   # atomic outputs: a kill mid-write must not leave partial files
 # Dirs come from env vars when set (tests, another machine); the defaults are the original Windows paths.
 HERE=os.path.dirname(os.path.abspath(__file__))   # sibling scripts (tr.py, board.py, analyze2.py) are looked up here, not in a hard coded dir
 W=os.environ.get('WEIQI_WORK',r'D:\tmp\work');V=os.environ.get('WEIQI_VID',r'D:\tmp\vid')
@@ -23,7 +23,8 @@ def load_sources():
     vid={x['idx']:x for x in IDX if x['season']==SEASON};return ''
 SRC_ERR=load_sources()
 DL=threading.Semaphore(1)
-log=lambda *a:print(time.strftime('%H:%M:%S'),*a,flush=True)
+log=Log(lambda:os.path.join(W,'logs','orch2.log'))   # console + utf-8 file W/logs/orch2.log (survives a cp936 console and restarts)
+ENV=utf8_env()   # utf-8 text mode for every child process
 def D(i):return os.path.join(W,'v',str(i))   # per video cache dir: v.mp4, t.json (transcript), b.json (board frames)
 # ---- 阶段A: 单视频 ----
 def stageA(i):
@@ -32,12 +33,12 @@ def stageA(i):
     if not os.path.exists(mp4):
         with DL:
             for k in range(40):
-                subprocess.run([PY,'-m','yt_dlp','-f','bv*[height<=720][vcodec^=avc]+ba/b[height<=720]/b','--merge-output-format','mp4','--ffmpeg-location',os.path.dirname(FF),'--retries','10','-N','1','--sleep-requests','1','-o',mp4,'https://www.bilibili.com/video/'+b],capture_output=True)
+                subprocess.run([PY,'-m','yt_dlp','-f','bv*[height<=720][vcodec^=avc]+ba/b[height<=720]/b','--merge-output-format','mp4','--ffmpeg-location',os.path.dirname(FF),'--retries','10','-N','1','--sleep-requests','1','-o',mp4,'https://www.bilibili.com/video/'+b],capture_output=True,env=ENV)
                 if os.path.exists(mp4) and os.path.getsize(mp4)>1e6:break
                 time.sleep(45)
             else:raise RuntimeError('download failed %d'%i)
-    if not os.path.exists(tj):subprocess.run([PY,os.path.join(HERE,'tr.py'),mp4,tj],check=True,capture_output=True)
-    if not os.path.exists(bj):subprocess.run([PY,os.path.join(HERE,'board.py'),mp4,bj,FF],check=True,capture_output=True)
+    if not os.path.exists(tj):subprocess.run([PY,os.path.join(HERE,'tr.py'),mp4,tj],check=True,capture_output=True,env=ENV)
+    if not os.path.exists(bj):subprocess.run([PY,os.path.join(HERE,'board.py'),mp4,bj,FF],check=True,capture_output=True,env=ENV)
     log('A done',i,vid[i]['title'])
 # ---- 分组树 (多视频合并) ----
 C=18;DT=1/6
@@ -176,15 +177,16 @@ def stageB(name,idxs,visits=150):
     N=build_tree(idxs);atomic_write_json(base+'.n.json',N)
     a2=base+'.a2.json'
     if not os.path.exists(a2) and not os.environ.get('NOAN'):
-        subprocess.run([PY,os.path.join(HERE,'analyze2.py'),base+'.n.json',a2,'220','100'],capture_output=True)
-    A=json.load(open(a2)) if os.path.exists(a2) else {}
+        subprocess.run([PY,os.path.join(HERE,'analyze2.py'),base+'.n.json',a2,'220','100'],capture_output=True,env=ENV)
+    A=read_json(a2,default={})   # explicit utf-8, BOM tolerant; a damaged file reads as empty instead of crashing
     sp=os.path.join(W,'summary_%s.md'%safe);summ=open(sp,encoding='utf-8').read() if os.path.exists(sp) else ''
-    kp=os.path.join(W,'kp_'+safe+'.json');KP=json.load(open(kp,encoding='utf-8')) if os.path.exists(kp) else {}
+    kp=os.path.join(W,'kp_'+safe+'.json');KP=read_json(kp,default={})
     sgf=merge(N,A,idxs,name,summ,KP)
     atomic_write_json(os.path.join(W,'kpin_'+safe+'.json'),DUMP[:],ensure_ascii=False);DUMP.clear()
     atomic_write_text(sgf_path(name),sgf)
     log('B done',name,sum(1 for n in N if not n['dead']),'nodes',len(sgf))
 if __name__=='__main__':
+    setup_stdio()
     G=groups()
     dur={x['idx']:x['sec'] for x in IDX if x['season']==SEASON}
     gp=sorted(G,key=lambda g:(g[0]!='小目-小飞挂-二间高夹',-sum(dur[i] for i in g[1])))   # 总时长长的优先
