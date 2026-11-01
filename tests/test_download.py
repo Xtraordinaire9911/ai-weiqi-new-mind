@@ -190,7 +190,7 @@ def test_corrupt_json_from_a_killed_run_is_redone(dl, monkeypatch):
 
     monkeypatch.setattr(o.subprocess, "run", fake)
     o.stageA(2)
-    assert ran == ["tr.py", "board.py"]
+    assert ran == ["board.py", "tr.py"]
     assert os.path.exists(os.path.join(o.D(2), "t.json.corrupt"))
 
 

@@ -72,14 +72,25 @@ def child(stage,args):
     try:r=subprocess.run(args,capture_output=True,env=ENV,timeout=STAGE_TIMEOUT)
     except subprocess.TimeoutExpired:raise StageError(stage,'timed out after %ds'%STAGE_TIMEOUT)
     if r.returncode:raise StageError(stage,'exit code %d: %s'%(r.returncode,tail(r.stderr)))
+def rejected(p):
+    """Reason when a stage already rejected this video (<name>.rej.json), so the heavy work is not repeated for the same verdict.
+    WEIQI_RETRY_REJECTED=1 forgets old verdicts (after fixing the recogniser, say)."""
+    rj=os.path.splitext(p)[0]+'.rej.json'
+    if not os.path.exists(rj):return ''
+    if os.environ.get('WEIQI_RETRY_REJECTED'):os.remove(rj);return ''
+    return '; '.join(read_json(rj,default={}).get('reasons',['rejected']))
 def stageA(i):
     if not FF:raise StageError('setup','ffmpeg not found (set FFMPEG=path)')
     os.makedirs(D(i),exist_ok=True);mp4=os.path.join(D(i),'v.mp4');tj=os.path.join(D(i),'t.json');bj=os.path.join(D(i),'b.json')
     for p in (tj,bj):   # a json left half written by a killed run is moved aside, so its stage runs again
         if os.path.exists(p):read_json(p,default=None,quarantine=True)
     if not os.path.exists(mp4) and not (os.path.exists(tj) and os.path.exists(bj)):download(i)   # no download when only the video is gone
-    if not os.path.exists(tj):child('transcribe',[PY,os.path.join(HERE,'tr.py'),mp4,tj])
-    if not os.path.exists(bj):child('board',[PY,os.path.join(HERE,'board.py'),mp4,bj,FF])
+    # board first: its layout check is cheap and a video that fails it (other layout) saves the long whisper run
+    for p,stage,cmd in ((bj,'board',[PY,os.path.join(HERE,'board.py'),mp4,bj,FF]),(tj,'transcribe',[PY,os.path.join(HERE,'tr.py'),mp4,tj])):
+        if os.path.exists(p):continue
+        why=rejected(p)
+        if why:raise StageError(stage,'rejected earlier: '+why)
+        child(stage,cmd)
     log('A done',i,vid[i]['title'])
 def process_video(i):
     """stageA that never raises. True when the video is ready; otherwise False, with the reason in the log and in failed_videos.json."""
