@@ -248,7 +248,10 @@ def looks_like_name(raw: str, title_case: bool) -> bool:
         return True
     if len(tokens) == 1 and (re.search(r"[-_.]", tokens[0]) or re.search(r"[a-z][A-Z]", tokens[0])):
         return True
-    if title_case and 2 <= len(tokens) <= 6:
+    # "PolyForm Noncommercial 1.0.0": capitalised words and a version number are a name, in a
+    # heading too. Without a version number only cells and the like may be product names.
+    has_version = any(t[0].isdigit() for t in tokens)
+    if (title_case or has_version) and 2 <= len(tokens) <= 6:
         if all(t[0].isupper() or t[0].isdigit() or t.lower() in _CONNECTORS for t in tokens) \
                 and any(t[0].isupper() for t in tokens):
             return True

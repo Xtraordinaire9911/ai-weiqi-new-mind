@@ -645,3 +645,9 @@ def test_default_exempt_list_keeps_license_advice_but_skips_license_texts():
     assert cb.matches_any(".gitmessage", cb.DEFAULT_EXEMPT)
     assert not cb.matches_any("docs/LICENSE-ADVICE.md", cb.DEFAULT_EXEMPT)
     assert not cb.matches_any("NOTICE.md", cb.DEFAULT_EXEMPT)
+
+
+def test_heading_that_is_a_product_name_with_a_version():
+    text = "## 3.1 PolyForm Noncommercial 1.0.0\n\n" + ZH + "\n\n" + EN + "\n"
+    assert found(text) == []
+    assert found("## 3.1 Plain words here\n\n" + ZH + "\n\n" + EN + "\n") == [(1, "missing", "heading")]
