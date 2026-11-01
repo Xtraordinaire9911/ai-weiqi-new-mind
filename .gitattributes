@@ -1,0 +1,5 @@
+# Keep SGF files and the packed library on LF line endings. tools/check_repo.py compares data/library.js
+# with data/sgf/*.sgf byte for byte, and core.autocrlf=true on Windows would otherwise turn checked out
+# SGF files into CRLF and make the packed copy depend on whose machine built it.
+*.sgf text eol=lf
+data/library.js text eol=lf

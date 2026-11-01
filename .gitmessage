@@ -1,0 +1,11 @@
+
+# type(scope): short imperative subject, for example  docs(repo): add branching guide
+# types: feat fix docs style refactor perf test build chore revert
+# scopes: viewer pipeline data remote tools engine docs repo release
+# Keep the subject under about 72 characters and skip the final period.
+#
+# Then, if it helps, a short paragraph in plain words about why you made the change
+# and anything a reviewer should know. Mark breaking changes with ! after the scope
+# or a BREAKING CHANGE: line at the end.
+#
+# Enable it with: git config commit.template .gitmessage
