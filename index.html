@@ -246,7 +246,7 @@ cv.onclick=e=>{const r=cv.getBoundingClientRect(),V=Vnow,span=Math.max(V.x1-V.x0
  const key=gtp([x,y]);document.querySelectorAll('.chip').forEach(c=>{const h=c.dataset.pv.split(' ').includes(key);c.classList.toggle('hot',h);if(h)c.scrollIntoView({block:'nearest'})});window.RC&&RC.click(x,y)}; // compute switch: trial move on an empty point
 // ---- Credit properties for "copy SGF" ----
 // The licenses make credit a condition of reuse, so a copied game record carries it too. AP, CP and SO are added to the root node, but only the ones the file does not have yet. The stored SGF text is never changed, only the copy.
-const VIEWER_VER='4.3',REPO_URL='https://github.com/Xtraordinaire9911/ai-weiqi-new-mind';
+const VIEWER_VER='4.4',REPO_URL='https://github.com/Xtraordinaire9911/ai-weiqi-new-mind';
 const CREDIT_CP='Based on ai-weiqi-new-mind by Xtraordinaire9911 ('+REPO_URL+'), licensed under PolyForm Noncommercial 1.0.0 (code) and CC BY-NC-SA 4.0 (data and docs). The teacher commentary text belongs to 陈林涛 and is not covered by these licenses.';
 const sgfEsc=v=>v.replace(/[\]\\]/g,'\\$&'); // inside a property value, ] and \ must be escaped
 function withCredit(sgf){
