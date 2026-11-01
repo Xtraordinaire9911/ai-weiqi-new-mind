@@ -31,6 +31,8 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
   input,select,textarea,#rc select,#rc input[type=text],#rc input[type=password],#ep select,#ep textarea{font-size:max(16px,1rem)!important}
   input[type=checkbox]{width:22px;height:22px;vertical-align:middle}
   #list div{display:flex;align-items:center;padding:6px 10px}
+  .qz-go,.qz-pill{display:inline-flex;align-items:center;min-height:44px}
+  .qz-btns button,.qz-head button{min-height:44px}
   .chip,.t{display:inline-flex;align-items:center;padding:4px 10px;margin:3px 2px}
   .card{font-size:1rem}.card h5{font-size:.8rem}
   #path{flex-wrap:nowrap;overflow-x:auto;font-size:.8rem;padding-bottom:4px;-webkit-overflow-scrolling:touch}#path span{flex:none;display:inline-flex;align-items:center;padding:0 12px}
@@ -62,6 +64,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 }
 @media ${QA}{
   body{display:flex;flex-direction:column;height:auto;min-height:100dvh;padding-top:var(--sat);padding-bottom:calc(var(--barh) + var(--sab))}
+  body.qz{padding-bottom:var(--sab)}
   main{display:contents}
   main>*{flex:none}
   canvas{position:sticky;top:var(--sat);z-index:20;align-self:center;box-shadow:0 0 0 100vmax var(--bg);clip-path:inset(-1px -100vmax -1px -100vmax)}
@@ -160,6 +163,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
   function markState() { const b = $('ba'); const bf = $('bf'); void b; void bf; }
 
   function openDrawer(toCompute) {
+    engineNote();
     document.body.classList.remove('mmore');
     document.body.classList.add('mdraw');
     const rc = $('rc');
@@ -255,6 +259,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
     if (mq.addEventListener) mq.addEventListener('change', sync); else if (mq.addListener) mq.addListener(sync);
     sync(); touchSetup();
     const m = $('rcm'); if (m) m.addEventListener('change', () => setTimeout(engineNote, 0));
+    const rcd = $('rc'); if (rcd) rcd.addEventListener('toggle', engineNote);
     new MutationObserver(engineNote).observe(document.querySelector('section') || document.body, { childList: true });
     engineNote();
     addEventListener('resize', () => { if (!mq.matches) closeAll(); });
