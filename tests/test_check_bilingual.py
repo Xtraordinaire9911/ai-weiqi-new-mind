@@ -651,3 +651,10 @@ def test_heading_that_is_a_product_name_with_a_version():
     text = "## 3.1 PolyForm Noncommercial 1.0.0\n\n" + ZH + "\n\n" + EN + "\n"
     assert found(text) == []
     assert found("## 3.1 Plain words here\n\n" + ZH + "\n\n" + EN + "\n") == [(1, "missing", "heading")]
+
+
+def test_comment_markers_inside_inline_code_are_not_a_comment():
+    text = ("Use `<!-- bilingual-check: skip-file -->` to skip a whole file.\n\n" + EN + "\n\n" + ZH + "\n")
+    rep = cb.check_text(text, "doc.md")
+    assert not rep.skipped
+    assert [(p.line, p.kind) for p in rep.problems] == [(3, "order")]

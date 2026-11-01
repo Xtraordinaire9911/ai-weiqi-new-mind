@@ -402,6 +402,19 @@ def starts_block(s: str) -> bool:
     return False
 
 
+def find_comment_start(line: str, pos: int) -> int:
+    """Index of the next "<!--" that is not inside an inline code span, or -1."""
+    spans = [(m.start(), m.end()) for m in _CODE_SPAN.finditer(line)]
+    while True:
+        start = line.find("<!--", pos)
+        if start < 0:
+            return -1
+        inside = next((end for begin, end in spans if begin <= start < end), None)
+        if inside is None:
+            return start
+        pos = inside
+
+
 def strip_comments(raw_lines: Sequence[str]) -> Tuple[List[str], bool]:
     """Blank HTML comments (outside fenced code) and regions switched off by a directive.
 
@@ -445,7 +458,7 @@ def strip_comments(raw_lines: Sequence[str]) -> Tuple[List[str], bool]:
                         off = word == "off"
                 result.append(" " * len(chunk))
             else:
-                start = line.find("<!--", pos)
+                start = find_comment_start(line, pos)
                 if start < 0:
                     result.append(line[pos:])
                     break
