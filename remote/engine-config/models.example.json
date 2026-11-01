@@ -1,0 +1,10 @@
+{
+  "models": [
+    {"id": "net-a", "label": "Network A (the default)", "path": "models/kata1-network-a.bin.gz"},
+    {"id": "net-b", "label": "Network B", "path": "models/kata1-network-b.bin.gz"}
+  ],
+  "configs": [
+    {"id": "gpu", "label": "GPU example", "path": "analysis_gpu.example.cfg"},
+    {"id": "cpu", "label": "CPU example", "path": "analysis_cpu.example.cfg"}
+  ]
+}
