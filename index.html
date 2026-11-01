@@ -1,0 +1,155 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>定式库</title>
+<style>
+:root{--bg:#f6f3ec;--fg:#222;--pn:#fff;--ac:#b5651d;--bd:#d8d2c4;--gd:#2e8b57;--rd:#c0392b;--mu:#777}
+@media(prefers-color-scheme:dark){:root{--bg:#1c1b19;--fg:#e8e4da;--pn:#262521;--ac:#e0a060;--bd:#3a3832;--gd:#4fc08d;--rd:#ef7a6b;--mu:#999}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px system-ui,"Microsoft YaHei",sans-serif;display:grid;grid-template-columns:240px minmax(320px,1fr) 380px;height:100vh}
+aside,main,section{overflow:auto;padding:10px;min-width:0}aside,section{background:var(--pn);border:0 solid var(--bd)}aside{border-right-width:1px}section{border-left-width:1px}
+@media(max-width:980px){body{grid-template-columns:1fr;height:auto}aside,section{max-height:45vh}}
+input,select,button{font:inherit;color:inherit;background:var(--pn);border:1px solid var(--bd);border-radius:5px;padding:4px 8px}button{cursor:pointer}button:hover,.on{border-color:var(--ac);color:var(--ac)}
+#list div{padding:4px 6px;cursor:pointer;border-radius:4px}#list div:hover,#list .on{background:var(--bg);color:var(--ac)}#list h4{margin:10px 0 2px;font-size:12px;opacity:.7}
+canvas{width:100%;max-width:min(80vh,100%);aspect-ratio:1;display:block;margin:auto;cursor:pointer}
+.bar{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0;justify-content:center}
+#path{display:flex;flex-wrap:wrap;gap:3px;margin:6px 0;font-size:12px}#path span{padding:1px 6px;border-radius:10px;border:1px solid var(--bd);cursor:pointer}#path .cur{background:var(--ac);color:#fff;border-color:var(--ac)}
+.card{border:1px solid var(--bd);border-left:4px solid var(--ac);border-radius:6px;padding:8px 10px;margin:8px 0;line-height:1.65;white-space:pre-wrap}
+.card h5{margin:0 0 4px;font-size:12px;color:var(--ac)}.card.ai{border-left-color:var(--gd)}.card.ai h5{color:var(--gd)}.card.kp{border-left-color:#d35400;background:rgba(211,84,0,.07)}.card.kp h5{color:#d35400}.card.ctx{border-left-color:#8e44ad}.card.ctx h5{color:#8e44ad}
+.chip{display:inline-block;padding:0 6px;border-radius:9px;background:var(--bg);border:1px solid var(--gd);color:var(--gd);cursor:pointer;font-weight:600;margin:0 1px}.chip:hover,.chip.hot{background:var(--gd);color:#fff}
+.pv{border-color:var(--ac);color:var(--ac)}.pv:hover{background:var(--ac);color:#fff}
+.t{color:var(--ac);cursor:pointer;text-decoration:underline}#vars button{display:block;width:100%;text-align:left;margin:3px 0}
+#info{text-align:center;color:var(--mu)}h4{margin:12px 0 4px}
+</style></head><body>
+<aside><select id="src"></select> <input id="q" placeholder="搜索 夹/挂/三三…" style="width:100%;margin:6px 0"><div id="ver" style="font-size:11px;color:var(--mu);margin:2px 0"></div><div id="prog" style="background:#fff3cd;color:#664d03;border:1px solid #e0b84a;border-radius:5px;padding:6px 8px;margin:6px 0;font-size:13px;display:none"></div><div id="list"></div></aside>
+<main><canvas id="cv" width="800" height="800"></canvas>
+<div class="bar"><button id="b0">⏮</button><button id="b1">◀</button><button id="b2">▶</button><button id="b3">⏭</button><button id="bn">手数</button><button id="bf">视角:自动</button><button id="bl" style="display:none">演示征子</button><button id="ba">AI局部点</button><button id="bk">复制SGF</button></div>
+<div id="cap" style="display:none;margin:4px auto;max-width:min(80vh,100%);padding:3px 10px;border-radius:12px;background:rgba(255,140,0,.15);border:1px solid #e67e22;color:var(--ac);font-size:13px;text-align:center"></div><div id="info"></div><div id="path"></div></main>
+<section><h3 id="ti" style="margin-top:0"></h3><div id="vd"></div><h4>变化(↑↓选,→进入)</h4><div id="vars"></div><div id="cm"></div></section>
+<script src="data/library.js"></script>
+<script>
+// ---- SGF 解析: 节点 {p:{PROP:[vals]},c:[children],up} ----
+function parse(s){let i=0;
+ function val(){let v='';i++;while(s[i]!==']'){if(s[i]==='\\')i++;v+=s[i++]}i++;return v}
+ function seq(par){let last=par;while(i<s.length){const ch=s[i];
+  if(ch===';'){i++;const n={p:{},c:[],up:last};while(i<s.length){while(/\s/.test(s[i]))i++;const m=/^[A-Za-z]+/.exec(s.slice(i,i+10));if(!m)break;i+=m[0].length;const a=[];while(s[i]==='['||/\s/.test(s[i])){if(s[i]==='[')a.push(val());else i++}n.p[m[0]]=(n.p[m[0]]||[]).concat(a)}last.c.push(n);last=n}
+  else if(ch==='('){i++;seq(last)}else if(ch===')'){i++;return}else i++}}
+ i=s.indexOf('(')+1;const r0={p:{},c:[],up:null};seq(r0);return r0.c[0]}
+const N=19,L='ABCDEFGHJKLMNOPQRST',pt=v=>v&&v.length>=2?[v.charCodeAt(0)-97,v.charCodeAt(1)-97]:null;
+const gtp=([x,y])=>L[x]+(N-y),fromGtp=t=>/^[A-HJ-T]([1-9]|1[0-9])$/.test(t)?[L.indexOf(t[0]),N-+t.slice(1)]:null;
+function expand(v){if(!v.includes(':'))return[v];const[a,b]=v.split(':'),A=pt(a),B=pt(b),o=[];for(let x=A[0];x<=B[0];x++)for(let y=A[1];y<=B[1];y++)o.push(String.fromCharCode(97+x,97+y));return o}
+function replay(node,upto){const path=[];for(let n=node;n;n=n.up)path.unshift(n);const b=Array.from({length:N},()=>Array(N).fill(0)),num=new Map();let last=null,k=0;
+ const nb=(x,y)=>[[x+1,y],[x-1,y],[x,y+1],[x,y-1]].filter(([a,c])=>a>=0&&c>=0&&a<N&&c<N);
+ function grp(x,y){const c=b[x][y],seen=new Set([x+','+y]),st=[[x,y]],g=[];let lib=0;while(st.length){const[a,d]=st.pop();g.push([a,d]);for(const[e,f]of nb(a,d)){if(b[e][f]===0)lib++;else if(b[e][f]===c&&!seen.has(e+','+f)){seen.add(e+','+f);st.push([e,f])}}}return{g,lib}}
+ for(const n of path){for(const[key,c]of[['AB',1],['AW',2],['AE',0]])(n.p[key]||[]).flatMap(expand).forEach(v=>{const q=pt(v);b[q[0]][q[1]]=c});
+  for(const[key,c]of[['B',1],['W',2]]){if(!n.p[key])continue;const q=pt(n.p[key][0]);if(!q||q[0]>=N)continue;b[q[0]][q[1]]=c;k++;num.set(q[0]+','+q[1],k);last=q;
+   for(const[e,f]of nb(q[0],q[1]))if(b[e][f]===3-c){const r=grp(e,f);if(!r.lib)r.g.forEach(([a,d])=>{b[a][d]=0;num.delete(a+','+d)})}
+   const r=grp(q[0],q[1]);if(!r.lib)r.g.forEach(([a,d])=>b[a][d]=0)}}
+ return{b,num,last,k}}
+// ---- 状态 ----
+const $=id=>document.getElementById(id),cv=$('cv'),g=cv.getContext('2d');let candPts=[],hoverG=[],cur,tree,col,showN=true,showAI=true,sel=0,hot=[],ghost=[],view;
+function bbox(root){const xs=[],ys=[];(function w(n){for(const k of['AB','AW','B','W'])(n.p[k]||[]).flatMap(expand).forEach(v=>{const q=pt(v);if(q&&q[0]<N){xs.push(q[0]);ys.push(q[1])}});n.c.forEach(w)})(root);
+ if(!xs.length)return{x0:0,y0:0,x1:18,y1:18};const pc=(a,p)=>{a.sort((u,v)=>u-v);return a[Math.min(a.length-1,Math.floor(a.length*p))]};
+ let x0=Math.max(0,pc(xs,.03)-2),x1=Math.min(18,pc(xs,.97)+2),y0=Math.max(0,pc(ys,.03)-2),y1=Math.min(18,pc(ys,.97)+2);
+ if(x0<=3)x0=0;if(y0<=3)y0=0;if(x1>=15)x1=18;if(y1>=15)y1=18;const w=Math.max(x1-x0,y1-y0,10);
+ if(x0===0)x1=Math.min(18,w);else if(x1===18)x0=Math.max(0,18-w);else x1=Math.min(18,x0+w);if(y1===18)y0=Math.max(0,18-w);else if(y0===0)y1=Math.min(18,w);else y1=Math.min(18,y0+w);return{x0,y0,x1,y1}}
+// ---- 绘制 ----
+// ---- 周边/全盘上下文 ----
+const LOC={x1:10,y0:8}, FULL={x0:0,y0:0,x1:18,y1:18}, VM=['自动','聚焦','全盘'];
+const KW=/征子|厚势|外势|厚|接应|配合|对角|有子|一路|二路|三路|上方|下方|左边|右边|右下|右上|左上|劫材/g;
+const REG={右下:[11,12,18,18],右上:[11,0,18,7],左上:[0,0,5,7],右边:[11,8,18,18],上方:[0,0,10,7],下方:[0,14,10,18],左边:[0,0,2,18]};
+let viewMode=0,ladderMsg='',raf=0,Vnow=FULL;
+function ctxInfo(b,co){const stones=[];for(let x=0;x<N;x++)for(let y=0;y<N;y++)if(b[x][y]&&!(x<=LOC.x1&&y>=LOC.y0))stones.push([x,y]);
+ const hits=[...new Set(co.match(KW)||[])],mention=stones.some(s=>co.includes(gtp(s)));
+ return{stones,hits,mention,emph:hits.length>0||(stones.length>0&&mention),regions:hits.filter(h=>REG[h]).map(h=>REG[h])}}
+const nb4=(x,y)=>[[x+1,y],[x-1,y],[x,y+1],[x,y-1]].filter(([a,c])=>a>=0&&c>=0&&a<N&&c<N);
+function grpOf(bd,x,y){const c=bd[x][y],seen=new Set([x+','+y]),st=[[x,y]],g=[],lb=new Map();while(st.length){const[a,d]=st.pop();g.push([a,d]);for(const[e,f]of nb4(a,d)){if(!bd[e][f])lb.set(e+','+f,[e,f]);else if(bd[e][f]===c&&!seen.has(e+','+f)){seen.add(e+','+f);st.push([e,f])}}}return{g,libs:[...lb.values()]}}
+function put(bd,x,y,c){bd[x][y]=c;for(const[e,f]of nb4(x,y))if(bd[e][f]===3-c){const r=grpOf(bd,e,f);if(!r.libs.length)r.g.forEach(([a,d])=>bd[a][d]=0)}if(!grpOf(bd,x,y).libs.length){bd[x][y]=0;return false}return true}
+function runLadder(b0,px,py,first){const bd=b0.map(r=>r.slice()),pc=bd[px][py],cc=3-pc,path=[],pg0=new Set(grpOf(bd,px,py).g.map(q=>q+''));
+ let pg=grpOf(bd,px,py);
+ if(pg.libs.length===2){const[x,y]=pg.libs[first];if(!put(bd,x,y,cc))return null;path.push([x,y,cc])}
+ while(path.length<60){pg=grpOf(bd,px,py);if(bd[px][py]!==pc||pg.libs.length!==1)return path.length?{path,out:'noatari',cc,pc}:null;
+  const[x,y]=pg.libs[0];if(!put(bd,x,y,pc))return{path,out:'noatari',cc,pc};path.push([x,y,pc]);
+  const g2=grpOf(bd,x,y);
+  if(g2.libs.length>=3){const br=nb4(x,y).find(([a,c])=>b0[a][c]===pc&&!pg0.has(a+','+c));return{path,out:'escape',br,cc,pc}}
+  if(g2.libs.length<=1){const[a,c]=g2.libs[0]||[];if(g2.libs.length&&put(bd,a,c,cc))path.push([a,c,cc]);return{path,out:'capture',edge:x===0||x===18||y===0||y===18,cc,pc}}
+  let best=null;for(const[a,c]of g2.libs){const t=bd.map(r=>r.slice());if(!put(t,a,c,cc))continue;const q=grpOf(t,x,y);if(q.libs.length!==1)continue;
+   const[e,f]=q.libs[0],t2=t.map(r=>r.slice());if(!put(t2,e,f,pc)){best=best||[a,c,9];continue}const n=grpOf(t2,e,f).libs.length;const sc=n===2?0:n;if(!best||sc<best[2])best=[a,c,sc]}
+  if(!best)return{path,out:'noatari',cc,pc};put(bd,best[0],best[1],cc);path.push([best[0],best[1],cc])}
+ return{path,out:'cap60',cc,pc}}
+function ladderDemo(){const{b,num}=replay(cur),cand=[];const seen=new Set();
+ for(let x=0;x<N;x++)for(let y=0;y<N;y++)if(b[x][y]&&!seen.has(x+','+y)){const r=grpOf(b,x,y);r.g.forEach(q=>seen.add(q+''));if(r.libs.length<=2&&r.libs.length>0)cand.push({x,y,n:Math.max(...r.g.map(([a,c])=>num.get(a+','+c)||0)),l:r.libs.length})}
+ cand.sort((p,q)=>q.n-p.n);let pick=null;
+ for(const c of cand.slice(0,6)){for(const f of(c.l===2?[0,1]:[0])){const r=runLadder(b,c.x,c.y,f);if(r&&(!pick||(r.path.length>=3&&pick.path.length<3)))pick=r;if(pick&&pick.path.length>=3)break}if(pick&&pick.path.length>=3)break}
+ hot=[];$('cm').querySelectorAll('.chip').forEach(c=>c.classList.remove('hot'));
+ if(!pick){ghost=[];ladderMsg='未检测到征子'}else{ghost=pick.path;const cn=pick.cc===1?'黑':'白',pn=pick.pc===1?'黑':'白';
+  ladderMsg=`征子演示(追方${cn},被征${pn},${pick.path.length}手):`+({capture:pick.edge?'撞边被提 → 征子成立,追方'+cn+'有利':'遇到追方'+cn+'子被提 → 征子成立,追方'+cn+'有利',
+   escape:pick.br?`遇到${pn}方接应子 ${gtp(pick.br)} → 征子不成立,追方${cn}不利`:'逃出重围 → 征子不成立,追方'+cn+'不利',noatari:'追方无法继续叫吃 → 征子不成立,追方'+cn+'不利',cap60:'超过60步未决'})[pick.out]}
+ drawBoard()}
+function draw(){panel(drawBoard())}
+function nextCol(n){const pl=(n.p.PL||[''])[0];if(pl)return pl=='B'?1:2;for(let x=n;x;x=x.up)if(x.p.B||x.p.W)return x.p.B?2:1;return 1}
+function drawBoard(){cancelAnimationFrame(raf);const{b,num,last,k}=replay(cur),co=(cur.p.C||[''])[0],cx=ctxInfo(b,co),full=viewMode===2||(viewMode===0&&cx.emph),emph=full&&cx.emph,
+ V=full?FULL:view;Vnow=V;const S=cv.width,span=Math.max(V.x1-V.x0,V.y1-V.y0),m=S/(span+1.6),ox=m*.8,oy=m*.8;
+ const X=c=>ox+(c-V.x0)*m,Y=r=>oy+(r-V.y0)*m;
+ g.fillStyle='#e3b866';g.fillRect(0,0,S,S);g.strokeStyle='#333';
+ if(emph)cx.regions.forEach(([a,c,d,e])=>{g.fillStyle='rgba(255,140,0,.18)';g.fillRect(X(a)-m/2,Y(c)-m/2,(d-a+1)*m,(e-c+1)*m);g.save();g.setLineDash([8,6]);g.strokeStyle='rgba(230,110,0,.8)';g.lineWidth=2;g.strokeRect(X(a)-m/2,Y(c)-m/2,(d-a+1)*m,(e-c+1)*m);g.restore()});
+ g.strokeStyle='#333';
+ for(let c=V.x0;c<=V.x1;c++){g.lineWidth=(c===0||c===18)?2.5:1;g.beginPath();g.moveTo(X(c),Y(V.y0)-(V.y0>0?m*.5:0));g.lineTo(X(c),Y(V.y1)+(V.y1<18?m*.5:0));g.stroke()}
+ for(let r=V.y0;r<=V.y1;r++){g.lineWidth=(r===0||r===18)?2.5:1;g.beginPath();g.moveTo(X(V.x0)-(V.x0>0?m*.5:0),Y(r));g.lineTo(X(V.x1)+(V.x1<18?m*.5:0),Y(r));g.stroke()}
+ g.fillStyle='#333';for(const a of[3,9,15])for(const c of[3,9,15])if(a>=V.x0&&a<=V.x1&&c>=V.y0&&c<=V.y1){g.beginPath();g.arc(X(a),Y(c),3.5,0,7);g.fill()}
+ g.font=`${m*.32}px sans-serif`;g.fillStyle='#5a4';g.textAlign='center';g.textBaseline='middle'; // 坐标
+ for(let c=V.x0;c<=V.x1;c++)g.fillText(L[c],X(c),m*.3);for(let r=V.y0;r<=V.y1;r++)g.fillText(N-r,m*.3,Y(r));
+ const disc=(x,y,col_,a=1)=>{g.globalAlpha=a;g.beginPath();g.arc(X(x),Y(y),m*.47,0,7);g.fillStyle=col_==1?'#111':'#f4f4f4';g.fill();g.strokeStyle='#222';g.lineWidth=1;g.stroke();g.globalAlpha=1};
+ const gl=ghost.length?ghost:hoverG,nc=nextCol(cur);for(let x=V.x0;x<=V.x1;x++)for(let y=V.y0;y<=V.y1;y++)if(b[x][y]){disc(x,y,b[x][y],emph&&x<=LOC.x1&&y>=LOC.y0?.62:1);const n=num.get(x+','+y);if(showN&&n&&!gl.length){g.fillStyle=b[x][y]==1?'#fff':'#111';g.font=`${m*.4}px sans-serif`;g.fillText(n,X(x),Y(y)+1)}}
+ if(last){g.strokeStyle='#e33';g.lineWidth=2.5;g.beginPath();g.arc(X(last[0]),Y(last[1]),m*.47,0,7);g.stroke()}
+ // AI 局部候选 (AN: sgf:相对最佳目差:先验)
+ candPts=[];if(showAI&&cur.c.length)(cur.p.AN||[''])[0].split(';').filter(Boolean).forEach(s=>{const[v,l,p,wr,vis,pv]=s.split(':'),q=pt(v);if(!q||b[q[0]][q[1]])return;const loss=+l,col=loss>-0.3?'#2e8b57':loss>-1.5?'#e6a028':'#c0392b',x=X(q[0]),y=Y(q[1]);
+  candPts.push({q,loss,p:+p,vis,pv:(pv||'').split(' ').filter(Boolean)});
+  g.globalAlpha=.55;g.beginPath();g.arc(x,y,m*.38,0,7);g.fillStyle=nc==1?'#111':'#f4f4f4';g.fill();g.globalAlpha=1;g.lineWidth=3.5;g.strokeStyle=col;g.stroke();
+  g.font=`bold ${m*.3}px sans-serif`;const t=loss>-0.05?'最优':loss.toFixed(1);g.lineWidth=3;g.strokeStyle='rgba(255,255,255,.9)';g.strokeText(t,x,y+m*.66);g.fillStyle='#000';g.fillText(t,x,y+m*.66)});
+ // 视频里老师走的下一手: 蓝色虚线圈 + 与右侧变化列表对应的序号
+ cur.c.forEach((c,i)=>{const q=pt((c.p.B||c.p.W||[''])[0]);if(!q||q[0]>=N||b[q[0]][q[1]]||q[0]<V.x0||q[0]>V.x1||q[1]<V.y0||q[1]>V.y1)return;const x=X(q[0]),y=Y(q[1]);g.save();g.setLineDash([5,4]);g.strokeStyle='#2d6cdf';g.lineWidth=2.5;g.beginPath();g.arc(x,y,m*.47,0,7);g.stroke();g.restore();g.fillStyle='#2d6cdf';g.beginPath();g.arc(x+m*.36,y-m*.36,m*.19,0,7);g.fill();g.fillStyle='#fff';g.font=`bold ${m*.26}px sans-serif`;g.fillText(i+1,x+m*.36,y-m*.34)});
+ // 评论里点选的坐标 / PV 预览
+ gl.forEach(([c,r,gc],i)=>{const w=gc||((nc-1+i)%2+1);disc(c,r,w,.55);g.save();g.setLineDash([4,3]);g.strokeStyle='#2d6cdf';g.lineWidth=2;g.beginPath();g.arc(X(c),Y(r),m*.47,0,7);g.stroke();g.restore();g.fillStyle=w==2?'#111':'#fff';g.font=`bold ${m*.4}px sans-serif`;g.fillText(i+1,X(c),Y(r))});
+ hot.forEach(([c,r])=>{g.strokeStyle='#e67e22';g.lineWidth=3;g.beginPath();g.arc(X(c),Y(r),m*.52,0,7);g.stroke()});
+ // 周边外势光环
+ if(emph&&cx.stones.length){const p=.5+.5*Math.sin(Date.now()/280);cx.stones.forEach(([c,r])=>{g.fillStyle=`rgba(255,140,0,${.12+.12*p})`;g.beginPath();g.arc(X(c),Y(r),m*(.62+.08*p),0,7);g.fill();g.strokeStyle=`rgba(255,120,0,${.6+.4*p})`;g.lineWidth=3+2*p;g.beginPath();g.arc(X(c),Y(r),m*(.55+.08*p),0,7);g.stroke()});raf=requestAnimationFrame(drawBoard)}
+ // 说明条 / 按钮
+ const cap=$('cap'),parts=[];if(emph)parts.push('周边: '+(cx.hits.length?cx.hits.join(' / '):'外围有子')+(cx.stones.length?` · 外围子${cx.stones.length}`:''));if(ladderMsg)parts.push(ladderMsg);if(candPts.length)parts.push('半透明棋子=AI候选(颜色=该方行棋) · 圈色/数字=比局部最优差几目(绿≥-0.3) · 蓝虚线圈+序号=老师在视频里走的变化(对应右侧列表) · 悬停看AI变化,点击固定');
+ cap.textContent=parts.join('  ┃  ');cap.style.display=parts.length?'block':'none';$('bl').style.display=cx.hits.includes('征子')?'':'none';
+ $('bf').textContent='视角:'+VM[viewMode];
+ return k}
+function panel(k){const co=(cur.p.C||[''])[0],box=$('cm');box.innerHTML='';
+ const secs=co.split(/\n(?=【)/).filter(s=>s.trim());
+ secs.forEach(s=>{const mt=/^【([^】]+)】/.exec(s),h=mt?mt[1].replace(/\s*@\S+/,''):'',cls=h.includes('要点')?'kp':h.includes('周边')?'ctx':h.includes('AI')?'ai':'';let body=((mt&&/@\S+/.test(mt[1])?'@'+/@(\S+)/.exec(mt[1])[1]+' ':'')+(mt?s.slice(mt[0].length):s)).trim();
+  body=body.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/⟨([^⟩]+)⟩/g,(a,t)=>{const ps=t.trim().split(/\s+/);return ps.length>1?`<span class="chip pv" data-pv="${ps.join(' ')}">${ps[0]}…${ps.length}手</span>`:`<span class="chip" data-pv="${ps[0]}">${ps[0]}</span>`}).replace(/@(?:(\d+)\|)?(\d+):(\d\d)/g,(a,v,mm,ss)=>`<span class="t" data-v="${v||0}" data-t="${+mm*60+ +ss}">▶${v?'视频'+(+v+1)+' ':''}${mm}:${ss}</span>`);
+  box.insertAdjacentHTML('beforeend',`<div class="card ${cls}">${h?`<h5>${h}</h5>`:''}${body}</div>`)});
+ if(cur.c.length>=2&&!(cur.p.AN||[''])[0])box.insertAdjacentHTML('beforeend','<div class="card ai"><h5>AI局部评估</h5>本分组的 AI 分析正在用修正后的方法重新生成(旧结果因分数视角错误已撤下),完成后这里会显示候选点与老师着法的目数对比。</div>');
+ // 变化列表
+ const vs=$('vars');vs.innerHTML='';cur.c.forEach((c,i)=>{const bt=document.createElement('button'),mv=c.p.B||c.p.W,q=mv&&pt(mv[0]),an=(cur.p.AN||[''])[0].split(';').find(s=>s.startsWith(mv?mv[0]+':':'#'));
+  const kp=((c.p.C||[''])[0].match(/【要点与考量】([^\n]*)/)||[])[1]||'',al=an?+an.split(':')[1]:null;
+  bt.textContent=`${i+1}. ${c.p.B?'●':'○'} ${q&&q[0]<N?gtp(q):'脱先/他处'}${al===null?'':al>-0.05?'  AI最优':'  AI '+al.toFixed(1)+'目'}${kp?'  '+kp.slice(0,22):''}`;bt.onclick=()=>go(c);if(i==sel)bt.classList.add('on');vs.appendChild(bt)});
+ // 手顺
+ const ns=[];for(let n=cur;n;n=n.up)ns.unshift(n);$('path').innerHTML='';ns.forEach((n,i)=>{const mv=n.p.B||n.p.W;if(!mv)return;const s=document.createElement('span'),q=pt(mv[0]);s.textContent=`${i}.${n.p.B?'●':'○'}${gtp(q)}`;if(n===cur)s.className='cur';s.onclick=()=>go(n);$('path').appendChild(s)});
+ $('info').textContent=`第${k}手 · ${cur.c.length?cur.c.length+'个后续':'终点'}`}
+function go(n){cur=n;sel=0;hot=[];ghost=[];ladderMsg='';draw()}
+// ---- 交互 ----
+$('cm').onclick=e=>{const t=e.target;if(t.dataset.t!==undefined){open(`https://www.bilibili.com/video/${col.vb[+t.dataset.v]||col.vb[0]}?t=${t.dataset.t}`)}
+ else if(t.dataset.pv){document.querySelectorAll('.chip').forEach(c=>c.classList.remove('hot'));t.classList.add('hot');const ps=t.dataset.pv.split(' ').map(fromGtp).filter(Boolean);hot=[];ghost=[];ladderMsg='';if(ps.length>1)ghost=ps;else hot=ps;drawBoard()}};
+function bp(e){const r=cv.getBoundingClientRect(),V=Vnow,span=Math.max(V.x1-V.x0,V.y1-V.y0),m=r.width/(span+1.6);return[Math.round((e.clientX-r.left-.8*m)/m)+V.x0,Math.round((e.clientY-r.top-.8*m)/m)+V.y0]}
+const tip=document.body.appendChild(Object.assign(document.createElement('div'),{style:'position:fixed;display:none;background:#222;color:#fff;padding:6px 9px;border-radius:6px;font:12px/1.5 sans-serif;pointer-events:none;z-index:9;max-width:260px'}));
+cv.onmousemove=e=>{const[x,y]=bp(e),c=candPts.find(c=>c.q[0]==x&&c.q[1]==y);if(c){const nh=c.pv.map(fromGtp).filter(Boolean);if(hoverG.join()!=nh.join()){hoverG=nh;drawBoard()}tip.style.display='block';tip.style.left=e.clientX+14+'px';tip.style.top=e.clientY+14+'px';tip.innerHTML=`<b>${gtp(c.q)}</b> ${c.loss>-0.05?'局部最优':'比最优差 '+(-c.loss).toFixed(1)+' 目'}<br>(只搜局部,不显示全盘胜率)<br>${c.p<0?'老师走的着法,已单独评估':'AI先验 '+Math.round(c.p*100)+'%'} · 搜索${c.vis}次<br>变化: ${c.pv.join(' ')}`}else{tip.style.display='none';if(hoverG.length){hoverG=[];drawBoard()}}};
+cv.onmouseleave=()=>{tip.style.display='none';if(hoverG.length){hoverG=[];drawBoard()}};
+cv.onclick=e=>{const r=cv.getBoundingClientRect(),V=Vnow,span=Math.max(V.x1-V.x0,V.y1-V.y0),m=r.width/(span+1.6),x=Math.round((e.clientX-r.left-.8*m)/m)+V.x0,y=Math.round((e.clientY-r.top-.8*m)/m)+V.y0;
+ const c=cur.c.find(c=>{const q=pt((c.p.B||c.p.W||[''])[0]);return q&&q[0]==x&&q[1]==y});if(c){go(c);return}
+ const cd=candPts.find(c=>c.q[0]==x&&c.q[1]==y);if(cd){ghost=cd.pv.map(fromGtp).filter(Boolean);hot=[];drawBoard();return}
+ const key=gtp([x,y]);document.querySelectorAll('.chip').forEach(c=>{const h=c.dataset.pv.split(' ').includes(key);c.classList.toggle('hot',h);if(h)c.scrollIntoView({block:'nearest'})})};
+const nav={b0:()=>go(tree),b1:()=>cur.up&&go(cur.up),b2:()=>cur.c[sel]&&go(cur.c[sel]),b3:()=>{let n=cur;while(n.c[0])n=n.c[0];go(n)}};
+for(const k in nav)$(k).onclick=nav[k];$('bn').onclick=()=>{showN=!showN;draw()};$('bf').onclick=()=>{viewMode=(viewMode+1)%3;draw()};$('bl').onclick=ladderDemo;$('ba').onclick=()=>{showAI=!showAI;draw()};$('bk').onclick=()=>navigator.clipboard.writeText(col.sgf);
+onkeydown=e=>{if(e.target.tagName==='INPUT')return;const k=e.key;if(k==='ArrowLeft')nav.b1();else if(k==='ArrowRight')nav.b2();else if(k==='ArrowUp'){sel=Math.max(0,sel-1);panel()}else if(k==='ArrowDown'){sel=Math.min(cur.c.length-1,sel+1);panel()}else if(k==='Home')nav.b0();else if(k==='End')nav.b3()};
+// ---- 库 ----
+function open_(c){col=c;tree=parse(c.sgf);view=bbox(tree);c.vb=((tree.p.PC||[''])[0].match(/BV\w+/g))||c.videos.map(v=>v.bvid);$('ti').textContent=c.name;$('vd').innerHTML=c.videos.map((v,i)=>`<div><a target="_blank" href="https://www.bilibili.com/video/${v.bvid}">▶ ${v.title}</a></div>`).join('');go(tree);document.querySelectorAll('#list div').forEach(d=>d.classList.toggle('on',d.dataset.id===c.id))}
+function renderList(){const q=$('q').value.trim(),s=$('src').value,box=$('list');box.innerHTML='';let ser='';
+ LIB.filter(c=>c.source===s&&(!q||c.name.includes(q)||c.videos.some(v=>v.title.includes(q)))).forEach(c=>{if(c.series!==ser){ser=c.series;box.insertAdjacentHTML('beforeend',`<h4>${c.sourceName} · ${ser}</h4>`)}const d=document.createElement('div');d.textContent=c.name;d.dataset.id=c.id;d.onclick=()=>open_(c);box.appendChild(d)})}
+[...new Set(LIB.map(c=>c.source))].forEach(s=>$('src').add(new Option(LIB.find(c=>c.source===s).sourceName,s)));
+$('src').onchange=$('q').oninput=renderList;renderList();
+{$('ver').textContent='界面 v3 · 数据 '+(window.LIBT||'旧缓存?');const M=LIB.length,D=LIB.filter(c=>c.sgf.length>1500).length,pg=$('prog');if(D<M){pg.style.display='block';pg.textContent=`内容生成中: ${D}/${M} 个定式已完成`}
+ open_(LIB.slice().sort((a,b)=>b.sgf.length-a.sgf.length)[0])}
+</script></body></html>

@@ -1,0 +1,5 @@
+analysis_logs/
+_test.html
+*.mp4
+*.pyc
+__pycache__/
