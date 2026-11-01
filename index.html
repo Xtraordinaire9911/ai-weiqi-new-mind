@@ -49,7 +49,7 @@ function replay(node,upto){const path=[];for(let n=node;n;n=n.up)path.unshift(n)
    const r=grp(q[0],q[1]);if(!r.lib)r.g.forEach(([a,d])=>b[a][d]=0)}}
  return{b,num,last,k}}
 // ---- 状态 ----
-const $=id=>document.getElementById(id),cv=$('cv'),g=cv.getContext('2d');let candPts=[],hoverG=[],cur,tree,col,showN=true,showAI=true,sel=0,hot=[],ghost=[],view;
+const $=id=>document.getElementById(id),cv=$('cv'),g=cv.getContext('2d');let candPts=[],hoverG=[],hoverB=null,bvNow=null,hitP=[],cur,tree,col,showN=true,showAI=true,sel=0,hot=[],ghost=[],view;
 function bbox(root){const xs=[],ys=[];(function w(n){for(const k of['AB','AW','B','W'])(n.p[k]||[]).flatMap(expand).forEach(v=>{const q=pt(v);if(q&&q[0]<N){xs.push(q[0]);ys.push(q[1])}});n.c.forEach(w)})(root);
  if(!xs.length)return{x0:0,y0:0,x1:18,y1:18};const pc=(a,p)=>{a.sort((u,v)=>u-v);return a[Math.min(a.length-1,Math.floor(a.length*p))]};
  let x0=Math.max(0,pc(xs,.03)-2),x1=Math.min(18,pc(xs,.97)+2),y0=Math.max(0,pc(ys,.03)-2),y1=Math.min(18,pc(ys,.97)+2);
@@ -91,7 +91,39 @@ function ladderDemo(){const{b,num}=replay(cur),cand=[];const seen=new Set();
 function draw(){panel(drawBoard())}
 function anOf(n){const l=window.RC&&RC.live(n);return l?l.an:(n.c.length?(n.p.AN||[''])[0]:'')} // candidate-point data: live results from the compute switch take priority, otherwise use the cached AN
 function nextCol(n){const lv=window.RC&&RC.live(n);if(lv)return lv.pl=='B'?1:2;const pl=(n.p.PL||[''])[0];if(pl)return pl=='B'?1:2;for(let x=n;x;x=x.up)if(x.p.B||x.p.W)return x.p.B?2:1;return 1} // live analysis knows the side to move (pl), so prefer it over inferring from the tree
-function drawBoard(){cancelAnimationFrame(raf);const{b,num,last,k}=replay(cur),co=(cur.p.C||[''])[0],cx=ctxInfo(b,co),full=viewMode===2||(viewMode===0&&cx.emph),emph=full&&cx.emph,
+// ---- Hover preview of the teacher's branches ----
+// Rules: only children of cur (level-1 blue circles, numbered) can be hovered. While X is hovered, only X's preview is shown: X's single chain (numbered from 1, up to the next fork or the end; color = each node's own B/W)
+// + a purple dotted circle with a full-name pill (e.g. 3-a) for each fork one level below the chain end (display only, not hoverable/clickable); all other level-1 circles, AI candidate points and the AI preview are hidden meanwhile.
+// Level naming (joined by hyphens): level 1: 1 2 3 / level 2: a b c / level 3: i ii iii / level 4: α β γ; e.g. "3-b-ii-γ". Colors are fixed per level: blue #2d6cdf / purple #8e44ad / magenta #d63384 / slate gray #5d6d7e (ring border, badge fill and tooltip swatch all match; they avoid the green/orange/red of the AI points). After entering a branch, the children of the new cur are numbered from level 1 again.
+const LV_COL=['#2d6cdf','#8e44ad','#d63384','#5d6d7e'],ROM=['i','ii','iii','iv','v','vi','vii','viii','ix','x','xi','xii','xiii','xiv','xv','xvi','xvii','xviii','xix','xx'],GRK='αβγδεζηθικλμνξοπρστυφχψω';
+const lvCol=lv=>LV_COL[Math.min(lv,LV_COL.length-1)],lvPart=(lv,i)=>lv===0?String(i+1):lv===1?(i<26?String.fromCharCode(97+i):`(${i+1})`):lv===2?(ROM[i]||`(${i+1})`):lv===3?(i<GRK.length?GRK[i]:`(${i+1})`):`(${i+1})`;
+const lvLabel=p=>p.map((i,lv)=>lvPart(lv,i)).join('-'); // idxPath: array of 0-based indexes per level, e.g. [2,1] -> "3-b"
+// As soon as the mouse leaves X's intersection, the preview is cleared within the same event (no grace period, no memory). Display/hit priority: (1) stones of the chain still on the board afterwards (including the real position after captures inside the chain) > (2) next-level letter circles (empty points only) > (3)(4) hidden AI points / sibling circles.
+const inVw=(q,V)=>!!q&&q[0]>=V.x0&&q[0]<=V.x1&&q[1]>=V.y0&&q[1]<=V.y1,isSetup=n=>!!(n.p.AB||n.p.AW||n.p.AE),bMove=n=>{const m=(n.p.B||n.p.W||[''])[0],q=pt(m);return q&&q[0]<N&&q[1]<N?q:null};
+function bPlan(n0){const mv=[];let n=n0,end='leaf';
+ while(n){if(isSetup(n)||!(n.p.B||n.p.W)){end='setup';break}if(mv.length>=150){end='cap';break}
+  mv.push({n,q:bMove(n),col:n.p.B?1:2,num:mv.length+1}); // color = the node's own B/W, no global inference; numbering starts at 1
+  if(n.c.length>=2){end='fork';break}if(!n.c.length){end='leaf';break}n=n.c[0]}
+ if(!mv.length)return null;
+ const last=mv[mv.length-1].n,fk=end==='fork'?last.c:[],own=new Map(),b0=rpOf(n0.up).b,bE=replay(last).b; // replay: reuses the existing play/capture logic to get the real position after the whole chain (b0 comes from the cache)
+ mv.forEach(m=>{if(m.q)own.set(m.q[0]+','+m.q[1],m)});
+ const st=m=>!!m.q&&own.get(m.q[0]+','+m.q[1])===m&&bE[m.q[0]][m.q[1]]===m.col; // this move is still on the board at the end of the chain
+ let lost=0;for(let x=0;x<N;x++)for(let y=0;y<N;y++)if(b0[x][y]&&(!bE[x][y]||own.has(x+','+y)))lost++; // original stones captured inside the chain
+ return{root:n0,mv,end,b:bE,own,st,lost,gone:mv.filter(m=>m.q&&!st(m)).length,nKids:fk.length,kids:fk.map((c,ci)=>({n:c,q:bMove(c),col:c.p.B?1:2,ci})).filter(k=>k.q&&!isSetup(k.n)&&(k.n.p.B||k.n.p.W))}} // ci = index of this child within the chain-end node c (same order as after entering it)
+const bpc=new WeakMap(),bPlanC=n=>{if(!bpc.has(n))bpc.set(n,bPlan(n));return bpc.get(n)}; // cache the preview plan per node (the tree never changes, so neither does the result)
+let rpc=null;const rpOf=n=>{if(!rpc||rpc.n!==n)rpc={n,r:replay(n)};return rpc.r}; // single-entry cache: replay result (and ctxInfo) of the current node, so hover/leave redraws do not replay again
+const pill=(cx,cy,txt,c,fs)=>{g.font=`bold ${fs}px sans-serif`;const w=g.measureText(txt).width+fs*.8,h=fs*1.3,r=h/2,x0=Math.max(w/2,Math.min(cv.width-w/2,cx)),x1=x0+w/2,x2=x0-w/2,y1=cy-h/2,y2=cy+h/2;
+ g.fillStyle=c;g.beginPath();g.moveTo(x2+r,y1);g.arcTo(x1,y1,x1,y2,r);g.arcTo(x1,y2,x2,y2,r);g.arcTo(x2,y2,x2,y1,r);g.arcTo(x2,y1,x1,y1,r);g.closePath();g.fill();g.fillStyle='#fff';g.fillText(txt,x0,cy+fs*.05)}; // x0 is clamped so the pill never leaves the canvas
+function drawBV(bv,V,X,Y,m,disc){
+ // (1) chain stones still on the board: translucent + solid blue ring + number (from 1); chain stones captured later are not drawn (they still use up their number); out-of-region moves are not drawn
+ bv.mv.forEach(mv=>{if(!bv.st(mv)||!inVw(mv.q,V))return;const x=X(mv.q[0]),y=Y(mv.q[1]),t=String(mv.num);disc(mv.q[0],mv.q[1],mv.col,.62);g.save();g.strokeStyle=lvCol(0);g.lineWidth=2.5;g.beginPath();g.arc(x,y,m*.47,0,7);g.stroke();g.restore();
+  g.fillStyle=mv.col==1?'#fff':'#111';g.font=`bold ${m*(t.length>2?.3:.4)}px sans-serif`;g.fillText(t,x,y)});
+ // (2) fork one level below the chain end (level 2): purple dotted circle + full-name pill (e.g. 3-a), no number, no stone, only if the point is empty after the chain; display only, not part of any hit testing
+ const i0=cur.c.indexOf(bv.root),vk=bv.kids.filter(k=>inVw(k.q,V)&&!bv.b[k.q[0]][k.q[1]]),c2=lvCol(1);
+ vk.forEach(k=>{const x=X(k.q[0]),y=Y(k.q[1]);g.save();g.setLineDash([1.5,5]);g.lineCap='round';g.strokeStyle=c2;g.lineWidth=2.6;g.beginPath();g.arc(x,y,m*.42,0,7);g.stroke();g.restore()});
+ vk.forEach(k=>pill(X(k.q[0])+m*.3,Y(k.q[1])-m*.42,lvLabel([i0,k.ci]),c2,Math.max(m*.36,14)))}
+let lastPulse=0;function pulse(t){if(t-lastPulse<32){raf=requestAnimationFrame(pulse);return}lastPulse=t;drawBoard()} // halo pulse throttled to ~30fps; not scheduled during hover preview or when the page is hidden (see the end of drawBoard)
+function drawBoard(){cancelAnimationFrame(raf);raf=0;const rp=rpOf(cur),{b,num,last,k}=rp,co=(cur.p.C||[''])[0],cx=rp.cx||(rp.cx=ctxInfo(b,co)),full=viewMode===2||(viewMode===0&&cx.emph),emph=full&&cx.emph,
  V=full?FULL:view;Vnow=V;const S=cv.width,span=Math.max(V.x1-V.x0,V.y1-V.y0),m=S/(span+1.6),ox=m*.8,oy=m*.8;
  const X=c=>ox+(c-V.x0)*m,Y=r=>oy+(r-V.y0)*m;
  g.fillStyle='#e3b866';g.fillRect(0,0,S,S);g.strokeStyle='#333';
@@ -103,20 +135,22 @@ function drawBoard(){cancelAnimationFrame(raf);const{b,num,last,k}=replay(cur),c
  g.font=`${m*.32}px sans-serif`;g.fillStyle='#5a4';g.textAlign='center';g.textBaseline='middle'; // 坐标
  for(let c=V.x0;c<=V.x1;c++)g.fillText(L[c],X(c),m*.3);for(let r=V.y0;r<=V.y1;r++)g.fillText(N-r,m*.3,Y(r));
  const disc=(x,y,col_,a=1)=>{g.globalAlpha=a;g.beginPath();g.arc(X(x),Y(y),m*.47,0,7);g.fillStyle=col_==1?'#111':'#f4f4f4';g.fill();g.strokeStyle='#222';g.lineWidth=1;g.stroke();g.globalAlpha=1};
- const gl=ghost.length?ghost:hoverG,nc=nextCol(cur);for(let x=V.x0;x<=V.x1;x++)for(let y=V.y0;y<=V.y1;y++)if(b[x][y]){disc(x,y,b[x][y],emph&&x<=LOC.x1&&y>=LOC.y0?.62:1);const n=num.get(x+','+y);if(showN&&n&&!gl.length){g.fillStyle=b[x][y]==1?'#fff':'#111';g.font=`${m*.4}px sans-serif`;g.fillText(n,X(x),Y(y)+1)}}
- if(last){g.strokeStyle='#e33';g.lineWidth=2.5;g.beginPath();g.arc(X(last[0]),Y(last[1]),m*.47,0,7);g.stroke()}
+ if(hoverB&&hoverB.up!==cur){setHover(null);tip.style.display='none'}const bv=hoverB?bPlanC(hoverB):null,gl=bv?[]:ghost.length?ghost:hoverG,nc=nextCol(cur),sb=bv?bv.b:b;bvNow=bv; // drop a stale hover target after navigation; while previewing, the board = position after the chain (with captures); chain stones are drawn by drawBV
+ for(let x=V.x0;x<=V.x1;x++)for(let y=V.y0;y<=V.y1;y++)if(sb[x][y]&&!(bv&&bv.own.has(x+','+y))){disc(x,y,sb[x][y],emph&&x<=LOC.x1&&y>=LOC.y0?.62:1);const n=num.get(x+','+y);if(showN&&n&&!gl.length&&!bv){g.fillStyle=b[x][y]==1?'#fff':'#111';g.font=`${m*.4}px sans-serif`;g.fillText(n,X(x),Y(y)+1)}}
+ if(last&&(!bv||(sb[last[0]][last[1]]&&!bv.own.has(last[0]+','+last[1])))){g.strokeStyle='#e33';g.lineWidth=2.5;g.beginPath();g.arc(X(last[0]),Y(last[1]),m*.47,0,7);g.stroke()} // during preview, mark the last move only if its stone still stands and is not replaced by a chain stone
  // AI 局部候选 (AN: sgf:相对最佳目差:先验)
  candPts=[];if(showAI)anOf(cur).split(';').filter(Boolean).forEach(s=>{const[v,l,p,wr,vis,pv]=s.split(':'),q=pt(v);if(!q||b[q[0]][q[1]])return;const loss=+l,col=loss>-0.3?'#2e8b57':loss>-1.5?'#e6a028':'#c0392b',x=X(q[0]),y=Y(q[1]);
-  candPts.push({q,loss,p:+p,vis,pv:(pv||'').split(' ').filter(Boolean)});
+  candPts.push({q,loss,p:+p,vis,pv:(pv||'').split(' ').filter(Boolean)});if(bv)return; // while hovering a teacher branch keep only the data (for the tooltip) and do not draw AI candidate points
   g.globalAlpha=.55;g.beginPath();g.arc(x,y,m*.38,0,7);g.fillStyle=nc==1?'#111':'#f4f4f4';g.fill();g.globalAlpha=1;g.lineWidth=3.5;g.strokeStyle=col;g.stroke();
   g.font=`bold ${m*.3}px sans-serif`;const t=loss>-0.05?'最优':loss.toFixed(1);g.lineWidth=3;g.strokeStyle='rgba(255,255,255,.9)';g.strokeText(t,x,y+m*.66);g.fillStyle='#000';g.fillText(t,x,y+m*.66)});
  // 视频里老师走的下一手: 蓝色虚线圈 + 与右侧变化列表对应的序号
- cur.c.forEach((c,i)=>{const q=pt((c.p.B||c.p.W||[''])[0]);if(!q||q[0]>=N||b[q[0]][q[1]]||q[0]<V.x0||q[0]>V.x1||q[1]<V.y0||q[1]>V.y1)return;const x=X(q[0]),y=Y(q[1]);g.save();g.setLineDash([5,4]);g.strokeStyle='#2d6cdf';g.lineWidth=2.5;g.beginPath();g.arc(x,y,m*.47,0,7);g.stroke();g.restore();g.fillStyle='#2d6cdf';g.beginPath();g.arc(x+m*.36,y-m*.36,m*.19,0,7);g.fill();g.fillStyle='#fff';g.font=`bold ${m*.26}px sans-serif`;g.fillText(i+1,x+m*.36,y-m*.34)});
+ hitP=[];cur.c.forEach((c,i)=>{const q=pt((c.p.B||c.p.W||[''])[0]);if(!q||q[0]>=N||b[q[0]][q[1]]||q[0]<V.x0||q[0]>V.x1||q[1]<V.y0||q[1]>V.y1)return;const x=X(q[0]),y=Y(q[1]);hitP.push({q,c,i});if(bv)return;g.save();g.setLineDash([5,4]);g.strokeStyle='#2d6cdf';g.lineWidth=2.5;g.beginPath();g.arc(x,y,m*.47,0,7);g.stroke();g.restore();g.fillStyle='#2d6cdf';g.beginPath();g.arc(x+m*.36,y-m*.36,m*.19,0,7);g.fill();g.fillStyle='#fff';g.font=`bold ${m*.26}px sans-serif`;g.fillText(lvLabel([i]),x+m*.36,y-m*.34)}); // hitP is filled even while previewing (hit testing); only the drawing is skipped
  // 评论里点选的坐标 / PV 预览
  gl.forEach(([c,r,gc],i)=>{const w=gc||((nc-1+i)%2+1);disc(c,r,w,.55);g.save();g.setLineDash([4,3]);g.strokeStyle='#2d6cdf';g.lineWidth=2;g.beginPath();g.arc(X(c),Y(r),m*.47,0,7);g.stroke();g.restore();g.fillStyle=w==2?'#111':'#fff';g.font=`bold ${m*.4}px sans-serif`;g.fillText(i+1,X(c),Y(r))});
+ if(bv)drawBV(bv,V,X,Y,m,disc); // preview of the hovered teacher branch (below hot)
  hot.forEach(([c,r])=>{g.strokeStyle='#e67e22';g.lineWidth=3;g.beginPath();g.arc(X(c),Y(r),m*.52,0,7);g.stroke()});
  // 周边外势光环
- if(emph&&cx.stones.length){const p=.5+.5*Math.sin(Date.now()/280);cx.stones.forEach(([c,r])=>{g.fillStyle=`rgba(255,140,0,${.12+.12*p})`;g.beginPath();g.arc(X(c),Y(r),m*(.62+.08*p),0,7);g.fill();g.strokeStyle=`rgba(255,120,0,${.6+.4*p})`;g.lineWidth=3+2*p;g.beginPath();g.arc(X(c),Y(r),m*(.55+.08*p),0,7);g.stroke()});raf=requestAnimationFrame(drawBoard)}
+ if(emph&&cx.stones.length){const p=.5+.5*Math.sin(Date.now()/280);cx.stones.forEach(([c,r])=>{g.fillStyle=`rgba(255,140,0,${.12+.12*p})`;g.beginPath();g.arc(X(c),Y(r),m*(.62+.08*p),0,7);g.fill();g.strokeStyle=`rgba(255,120,0,${.6+.4*p})`;g.lineWidth=3+2*p;g.beginPath();g.arc(X(c),Y(r),m*(.55+.08*p),0,7);g.stroke()});if(!bv&&!document.hidden)raf=requestAnimationFrame(pulse)}
  // 说明条 / 按钮
  const cap=$('cap'),parts=[];if(emph)parts.push('周边: '+(cx.hits.length?cx.hits.join(' / '):'外围有子')+(cx.stones.length?` · 外围子${cx.stones.length}`:''));if(ladderMsg)parts.push(ladderMsg);if(window.RC&&RC.live(cur))parts.push(RC.cap(cur));if(candPts.length)parts.push('半透明棋子=AI候选(颜色=该方行棋) · 圈色/数字=比局部最优差几目(绿≥-0.3) · 蓝虚线圈+序号=老师在视频里走的变化(对应右侧列表) · 悬停看AI变化,点击固定 · 悬停蓝圈=预览老师该分支的后续(序号从1起, 紫色 n-a 圈=进入后才出现的下一层)');
  cap.textContent=parts.join('  ┃  ');cap.style.display=parts.length?'block':'none';$('bl').style.display=cx.hits.includes('征子')?'':'none';
@@ -141,8 +175,33 @@ $('cm').onclick=e=>{const t=e.target;if(t.dataset.t!==undefined){open(`https://w
  else if(t.dataset.pv){document.querySelectorAll('.chip').forEach(c=>c.classList.remove('hot'));t.classList.add('hot');const ps=t.dataset.pv.split(' ').map(fromGtp).filter(Boolean);hot=[];ghost=[];ladderMsg='';if(ps.length>1)ghost=ps;else hot=ps;drawBoard()}};
 function bp(e){const r=cv.getBoundingClientRect(),V=Vnow,span=Math.max(V.x1-V.x0,V.y1-V.y0),m=r.width/(span+1.6);return[Math.round((e.clientX-r.left-.8*m)/m)+V.x0,Math.round((e.clientY-r.top-.8*m)/m)+V.y0]}
 const tip=document.body.appendChild(Object.assign(document.createElement('div'),{style:'position:fixed;display:none;background:#222;color:#fff;padding:6px 9px;border-radius:6px;font:12px/1.5 sans-serif;pointer-events:none;z-index:9;max-width:260px'}));
-cv.onmousemove=e=>{const[x,y]=bp(e),c=candPts.find(c=>c.q[0]==x&&c.q[1]==y);if(c){const nh=c.pv.map(fromGtp).filter(Boolean);if(hoverG.join()!=nh.join()){hoverG=nh;drawBoard()}tip.style.display='block';tip.style.left=e.clientX+14+'px';tip.style.top=e.clientY+14+'px';tip.innerHTML=`<b>${gtp(c.q)}</b> ${c.loss>-0.05?'局部最优':'比最优差 '+(-c.loss).toFixed(1)+' 目'}<br>(只搜局部,不显示全盘胜率)<br>${c.p<0?'老师走的着法,已单独评估':'AI先验 '+Math.round(c.p*100)+'%'} · 搜索${c.vis}次<br>变化: ${c.pv.join(' ')}`}else{tip.style.display='none';if(hoverG.length){hoverG=[];drawBoard()}}};
-cv.onmouseleave=()=>{tip.style.display='none';if(hoverG.length){hoverG=[];drawBoard()}};
+// Hover on teacher branches: the state depends only on whether the mouse is currently on an intersection of a level-1 blue circle; redraw only when the state changes; clear immediately when leaving it. Returns true = the event was handled by a level-1 circle.
+let tipFor=null,tipW=0,tipH=0; // the tooltip content is rebuilt/measured only when the hovered target changes; mouse moves only update its position
+const chip=lv=>`<i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${lvCol(lv)};margin-right:3px;vertical-align:-1px"></i>`;
+function hlVar(i){const bs=$('vars').children;for(let k=0;k<bs.length;k++){const on=k===i;bs[k].style.outline=on?'2px solid '+lvCol(0):'';bs[k].style.background=on?'rgba(45,108,223,.28)':''}} // highlight the matching number in the "variations" list on the right
+function setHover(n){if(n===hoverB)return false;hoverB=n;tipFor=null;hlVar(n?cur.c.indexOf(n):-1);return true} // the only entry point that changes hoverB (also keeps the list highlight in sync)
+function clearHover(){tip.style.display='none';if(hoverG.length||hoverB){hoverG=[];setHover(null);drawBoard()}} // synchronous clear: shared by mouseleave/mouseout/blur/visibilitychange
+function tipB(e,i,s){
+ if(tipFor!==hoverB){const f=s.mv[0],V=Vnow,cd=candPts.find(c=>c.q[0]==f.q[0]&&c.q[1]==f.q[1]),
+  out=s.mv.filter(m=>m.q&&!inVw(m.q,V)).length,ps=s.mv.filter(m=>!m.q).length,kv=s.kids.filter(k=>inVw(k.q,V)&&!s.b[k.q[0]][k.q[1]]);
+  let h=`${chip(0)}<b>分支 ${lvLabel([i])}</b> · 老师走的着法 <b>${gtp(f.q)}</b> ${f.col==1?'●':'○'}`;
+  if(cd)h+=`<br>AI(只搜局部): ${cd.loss>-0.05?'局部最优':'比局部最优差 '+(-cd.loss).toFixed(1)+' 目'}${cd.p<0?'(老师走的着法,已单独评估)':' · 先验 '+Math.round(cd.p*100)+'%'} · 搜索${cd.vis}次`;
+  h+=`<br>后续: ${s.mv.length}手(含此手), `+(s.end==='fork'?`下一分叉: 有${s.nKids}个分支`:s.end==='leaf'?'之后没有后续(终点)':s.end==='setup'?'之后是新的摆放,不再预览':'链过长,已截断');
+  if(out||ps)h+=`<br>含${out?'区域外着法'+out+'手':''}${out&&ps?'、':''}${ps?'虚着'+ps+'手':''}(未画出,仍计入手数)`;
+  if(s.lost||s.gone)h+=`<br>链内提子: 提掉原有${s.lost}子`+(s.gone?`,预览子被提${s.gone}子(不显示)`:'');
+  if(s.end==='fork')h+=`<br>下一层分叉: `+(kv.length?kv.slice(0,10).map(k=>`${chip(1)}<b>${lvLabel([i,k.ci])}</b>(${k.col==1?'●':'○'}${gtp(k.q)})`).join(' · ')+(kv.length>10?' …':''):'(都在区域外/被占点,未画)')
+   +`<br>这些是进入该分支后才可点的下一层, 现在不可点, 点进该分支才能选`+(kv.length&&s.nKids>kv.length?`(另有${s.nKids-kv.length}个在区域外/被占点,未画)`:'');
+  tip.style.left='0px';tip.style.top='0px';tip.innerHTML=h;tip.style.display='block';tipW=tip.offsetWidth;tipH=tip.offsetHeight;tipFor=hoverB} // measure first; near the right/bottom window edge, flip to the other side of the mouse
+ tip.style.display='block';tip.style.left=Math.max(4,e.clientX+14+tipW>innerWidth?e.clientX-tipW-14:e.clientX+14)+'px';tip.style.top=Math.max(4,e.clientY+14+tipH>innerHeight?e.clientY-tipH-14:e.clientY+14)+'px'}
+function hoverBranch(e){const[x,y]=bp(e),h=hitP.find(h=>h.q[0]==x&&h.q[1]==y); // hitP = level-1 circles of the current level (hit table); preview stones and next-level letter circles are not in it and never react to any event
+ // Priority (high to low): (1) stones still standing after the chain in the preview (2) next-level letter circles (empty points) (3)(4) hidden AI points / sibling circles. If the point is already taken by (1)/(2), the sibling circle is not hit (display and hit testing agree)
+ const cov=!!h&&!!hoverB&&h.c!==hoverB&&!!bvNow&&((bvNow.b[x][y]&&bvNow.own.has(x+','+y))||(!bvNow.b[x][y]&&bvNow.kids.some(k=>k.q[0]==x&&k.q[1]==y)));
+ if(h&&!cov){if(h.c!==hoverB){setHover(h.c);hoverG=[];drawBoard()}if(bvNow)tipB(e,h.i,bvNow);return true} // on a level-1 circle: hover it (X->Y switches directly); no redraw if the state is unchanged
+ if(hoverB){setHover(null);tip.style.display='none';drawBoard()} // not on any hittable level-1 circle: clear and redraw synchronously in the same event, back to the default view; no grace period, no memory, no setTimeout/rAF
+ return cov} // cov: the point is a sibling circle covered by (1)/(2): this event only clears and does not trigger the AI hover; in all other cases hand over to the original AI hover logic
+cv.onmousemove=e=>{if(hoverBranch(e))return;const[x,y]=bp(e),c=candPts.find(c=>c.q[0]==x&&c.q[1]==y);if(c){const nh=c.pv.map(fromGtp).filter(Boolean);if(hoverG.join()!=nh.join()){hoverG=nh;drawBoard()}tip.style.display='block';tip.style.left=e.clientX+14+'px';tip.style.top=e.clientY+14+'px';tip.innerHTML=`<b>${gtp(c.q)}</b> ${c.loss>-0.05?'局部最优':'比最优差 '+(-c.loss).toFixed(1)+' 目'}<br>(只搜局部,不显示全盘胜率)<br>${c.p<0?'老师走的着法,已单独评估':'AI先验 '+Math.round(c.p*100)+'%'} · 搜索${c.vis}次<br>变化: ${c.pv.join(' ')}`}else{tip.style.display='none';if(hoverG.length){hoverG=[];drawBoard()}}};
+cv.onmouseleave=cv.onmouseout=clearHover;addEventListener('blur',clearHover); // window blur / hidden tab also clear the hover synchronously; the pulse animation resumes when the page becomes visible again
+document.addEventListener('visibilitychange',()=>{clearHover();if(!document.hidden)drawBoard()});
 cv.onclick=e=>{const r=cv.getBoundingClientRect(),V=Vnow,span=Math.max(V.x1-V.x0,V.y1-V.y0),m=r.width/(span+1.6),x=Math.round((e.clientX-r.left-.8*m)/m)+V.x0,y=Math.round((e.clientY-r.top-.8*m)/m)+V.y0;
  const c=cur.c.find(c=>{const q=pt((c.p.B||c.p.W||[''])[0]);return q&&q[0]==x&&q[1]==y});if(c){go(c);return}
  const cd=candPts.find(c=>c.q[0]==x&&c.q[1]==y);if(cd){ghost=cd.pv.map(fromGtp).filter(Boolean);hot=[];drawBoard();return}
@@ -236,3 +295,4 @@ window.RC=(()=>{
    $('rcu').onchange=()=>{S.auto=$('rcu').checked;save()};$('rcc').onclick=test;$('rca').onclick=()=>analyze(cur,true);
    if(on())test()}}
 })();RC.init();
+</script></body></html>
