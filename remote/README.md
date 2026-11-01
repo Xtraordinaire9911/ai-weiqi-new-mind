@@ -147,6 +147,43 @@ A page opened from `http://localhost:8765` is allowed by default; a `file://` pa
 
 **Compliant ways to use a remote GPU**: (1) start the bridge on an LRZ / university / self-rented VM and forward the port to your machine with `ssh -L 8787:127.0.0.1:8787 <machine>`, so the page still uses `http://127.0.0.1:8787`; (2) or put a reverse proxy with TLS in front, or give the bridge `--cert/--key`. **Do not** listen on `0.0.0.0` without TLS (the token would be sent in clear text; the bridge warns about it). LRZ's port-forwarding procedure is not verified; read the LRZ Jupyter/tunnel FAQ first and check the policy.
 
+## 4b. 流式分析、暂停与切换网络（桥接服务 v2） / Streaming analysis, stop, and switching networks (bridge v2)
+
+桥接服务 v2 在原有的 `/analyze` 之外增加了几个接口，供查看器里的"KataGo 继续推演"面板使用（页面一侧见查看器分支的 `docs/ENGINE-SETUP.md`）。所有接口都需要令牌，没有任何接口接受文件路径。
+
+Bridge v2 adds a few endpoints next to `/analyze` for the viewer's "continue with KataGo" panel (the page side is described in `docs/ENGINE-SETUP.md` on the viewer branch). Every endpoint needs the token, and none of them accepts a file path.
+
+| 接口 / Endpoint | 作用 / Purpose |
+|---|---|
+| `GET /health` | 引擎状态、KataGo 版本、后端（OpenCL、CUDA、TensorRT、Eigen、Metal 等，无法判断时为 `unknown`）、当前网络 id、上限和功能列表 / Engine state, KataGo version, backend (OpenCL, CUDA, TensorRT, Eigen, Metal and so on, `unknown` when it cannot be told), active network id, limits and feature list |
+| `GET /models` | 运维人员允许的网络和配置（只有 id、标签、大小，不含路径），并标出当前使用的那个 / The networks and configs the operator allowed (id, label and size only, no paths), with the active one marked |
+| `POST /analyze` | 一个查询对应一个结果（原有接口，没有改动） / One query, one answer (the original endpoint, unchanged) |
+| `POST /stream` | 同样的查询，但用 `reportDuringSearchEvery`（0.1 到 5 秒）让 KataGo 边搜边报；响应是分块传输的 NDJSON，每次更新一行，最后一行带 `"done": true` 和 `bridge.end`（`finished`、`terminated`、`preempted`、`timeout`、`switch`）。客户端断开时，桥接服务会让 KataGo 终止这次搜索 / The same query, but with `reportDuringSearchEvery` (0.1 to 5 seconds) so KataGo reports while it searches; the response is chunked NDJSON, one line per update, the last one carries `"done": true` and `bridge.end` (`finished`, `terminated`, `preempted`, `timeout`, `switch`). When the client disconnects, the bridge tells KataGo to terminate that search |
+| `POST /terminate` | 立即终止正在进行的流式搜索（KataGo 的 `terminate`），GPU 随即空闲；可选 `{"id": ...}` 只终止该 id / Stops the running streaming search at once (KataGo's `terminate`), which frees the GPU; an optional `{"id": ...}` stops only that id |
+| `POST /switch` | 按 id 切换网络或配置（`{"model": id, "config": id}`），id 必须在运维人员的允许列表里；响应是 NDJSON 进度（`stopping`、`loading`、`ready`，失败时 `rollback` 和 `failed`）。切换期间其他请求得到 503；新网络加载失败时自动恢复原来的网络 / Switches the network or config by id (`{"model": id, "config": id}`), the id must be in the operator's allowlist; the response is NDJSON progress (`stopping`, `loading`, `ready`, and `rollback` plus `failed` when it fails). Other requests get 503 while it runs; if the new network cannot load, the previous one is restored |
+
+安全属性保持不变并有所加强：令牌用常数时间比较，只从 `Authorization` 头读取，不会出现在 URL 或日志里（日志只记录方法、不含查询串的路径和状态码）；默认只监听 127.0.0.1；查询字段白名单；`/analyze` 的 visits 上限是 `--max-visits`，`/stream` 另有 `--stream-max-visits`（默认 20000）和 `--stream-timeout`（默认 900 秒）；同一时间只允许一个流式搜索，新的搜索会取代旧的（桥接服务只有一个令牌）。
+
+The security properties stay and are tightened: the token is compared in constant time, read from the `Authorization` header only, and never appears in a URL or in the log (the log records the method, the path without query string, and the status); loopback by default; field allowlist for queries; the visits cap for `/analyze` is `--max-visits`, and `/stream` has its own `--stream-max-visits` (default 20000) and `--stream-timeout` (default 900 seconds); only one streaming search at a time, and a new one replaces the old one (the bridge has a single token).
+
+**网络由谁决定**：由启动桥接服务的人决定。用 `--model` 指定默认网络，用 `--allow-model ID=路径`（可重复）、`--models-dir 目录`（目录里的 `.bin.gz` 都会被允许）或 `--models-file 文件.json`（格式见 `engine-config/models.example.json`）加入其他网络。请求里只能写 id。
+
+**Who decides which networks**: the person who starts the bridge. `--model` names the default, and `--allow-model ID=PATH` (repeatable), `--models-dir DIR` (every `.bin.gz` in the folder is allowed) or `--models-file FILE.json` (format in `engine-config/models.example.json`) add others. A request can only name an id.
+
+**启动脚本**：`start_bridge.ps1`（Windows）和 `start_bridge.sh`（macOS、Linux）会在本机常见位置寻找 KataGo 可执行文件和最新的网络文件，然后在 127.0.0.1 启动桥接服务。它们不下载、不安装、不联网。`--print-setup`（脚本里是 `-PrintSetup`）只打印你需要提供的四样东西：KataGo 可执行文件、网络文件、可选的配置、端口。
+
+**Launchers**: `start_bridge.ps1` (Windows) and `start_bridge.sh` (macOS, Linux) look in the usual places on this computer for the KataGo executable and the newest network file, then start the bridge on 127.0.0.1. They download nothing, install nothing and use no network. `--print-setup` (`-PrintSetup` in the script) prints only the four things you provide: the KataGo executable, the network file, an optional config, and the port.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File remote\start_bridge.ps1 -PrintSetup
+powershell -ExecutionPolicy Bypass -File remote\start_bridge.ps1            # finds KataGo and a network, port 8787
+remote/start_bridge.sh --fake                                               # simulated data, no KataGo
+```
+
+后端是靠运行 `katago version`（只打印文字，不加载网络）读到的 `Using ... backend` 一行判断的，这一行的措辞来自 KataGo 源码；在没有真实 KataGo 的环境里只用模拟输出测试过。
+
+The backend is read from the `Using ... backend` line of `katago version` (it only prints text and does not load a network); the wording of that line comes from the KataGo source, and it was only tested with simulated output because no real KataGo was run.
+
 ## 5. 服务条款风险（请认真读） / Terms-of-service risks (read this honestly)
 
 来源列在文末；以官方页面当前的措辞为准。
@@ -194,7 +231,9 @@ Sources are listed at the end; the current wording of the official pages is what
 | `katago_batch.ipynb` / `make_notebook.py` | 同时适用于 Colab 和 Kaggle 的笔记本（内嵌上面两个脚本）；修改脚本后用 `python make_notebook.py` 重新生成 / Notebook for both Colab and Kaggle (embeds the two scripts above); after changing a script, regenerate with `python make_notebook.py` |
 | `slurm_analyze.sbatch` | Slurm 批处理模板（未在真实硬件上验证） / Slurm batch template (not verified on real hardware) |
 | `katago_bridge.py` | 可选：把 KataGo 分析暴露为 HTTP 接口（令牌 + CORS + 参数校验）；`--fake` 让你不用 GPU 也能试用界面 / Optional: KataGo analysis → HTTP (token + CORS + validation); `--fake` lets you try the UI without a GPU |
-| `selftest.py` | 无需 GPU 的自检（模拟引擎）：视角换算、区域、强制评估、断点续跑、与 `analyze2.py` 对比、桥接服务的校验/认证/CORS / GPU-free self-test (fake engine): perspective conversion, region, forced evaluation, resume, comparison with `analyze2.py`, bridge validation/auth/CORS |
+| `start_bridge.ps1` / `start_bridge.sh` | 启动脚本（Windows / macOS、Linux）：在本机寻找 KataGo 和网络并启动桥接服务；`-PrintSetup` / `--print-setup` 只打印需要你提供的内容 / Launchers (Windows / macOS, Linux): find KataGo and a network on this computer and start the bridge; `-PrintSetup` / `--print-setup` prints only what you must provide |
+| `engine-config/` | 配置示例：GPU、CPU，以及允许列表 `models.example.json`（都只是起点，请先运行 `katago benchmark` 再调整） / Config examples: GPU, CPU, and the allowlist `models.example.json` (only starting points, run `katago benchmark` and adjust) |
+| `selftest.py` | 无需 GPU 的自检（模拟引擎）：视角换算、区域、强制评估、断点续跑、与 `analyze2.py` 对比、桥接服务的校验/认证/CORS，以及在本机回环 socket 上的流式输出、终止、切换网络和启动脚本 / GPU-free self-test (fake engine): perspective conversion, region, forced evaluation, resume, comparison with `analyze2.py`, bridge validation/auth/CORS, and on a loopback socket the stream, terminate, network switch and the launcher |
 
 ## 7. 排障 / Troubleshooting
 
@@ -240,9 +279,13 @@ Sources are listed at the end; the current wording of the official pages is what
 
 Verified: `selftest.py` passes completely (fake engine; byte-for-byte identical with `analyze2.py`; the bridge's validation / auth / CORS / HTTP handling runs correctly on in-memory streams); the page's default behaviour is unchanged with no console errors; the page's connection test, analysis, trial moves, failure fallback, and perspective-declaration check run correctly against an **in-page fetch stub (a simulated bridge)**, with candidate-point colors / signs / forced evaluations as expected; an unreachable real address → a message and fallback to the cache after about 3 seconds.
 
-**未验证**：真实的 KataGo、真实的 GPU、在 Colab/Kaggle/LRZ 上的实际运行（没有账号，而且按要求没有运行 KataGo）；`setup_katago.py` 在各云端镜像上的库兼容性；各个加速倍数（都是估算）；桥接服务的真实 socket 和 SSH 端口转发；Slurm 模板；浏览器 WebGPU 方案也没有试过。
+桥接服务 v2 另外已验证：在 Docker（python:3.12-slim）里，`selftest.py` 在本机回环 socket 上检查了分块 NDJSON 流、终止、客户端断开、单一搜索的取代规则、时间上限、模型允许列表（路径永远不会出现在响应里）、`/switch` 的进度与回滚，以及 `start_bridge.sh`（用一个模拟的 KataGo 外壳脚本）。`start_bridge.ps1` 只检查了语法，以及找不到可用 Python 时的提示；它没有完整运行过。
 
-**Not verified**: a real KataGo, a real GPU, actual runs on Colab/Kaggle/LRZ (no accounts, and as requested KataGo was not run); library compatibility of `setup_katago.py` on the cloud images; the speed-up factors (all estimates); the bridge's real sockets and SSH port forwarding; the Slurm template; the browser WebGPU option was not tried.
+Also verified for bridge v2: in Docker (python:3.12-slim), `selftest.py` checks on a loopback socket the chunked NDJSON stream, terminate, a client disconnect, the single-search preemption rule, the time cap, the model allowlist (a path never appears in a response), the progress and rollback of `/switch`, and `start_bridge.sh` (with a pretend KataGo wrapper script). `start_bridge.ps1` was only syntax-checked and run as far as the "no usable Python" message; it has not been run end to end.
+
+**未验证**：真实的 KataGo、真实的 GPU、在 Colab/Kaggle/LRZ 上的实际运行（没有账号，而且按要求没有运行 KataGo）；`setup_katago.py` 在各云端镜像上的库兼容性；各个加速倍数（都是估算）；经过 SSH 端口转发、反向代理或厂商端口映射的连接；真实 KataGo 对 `reportDuringSearchEvery` 与 `terminate` 的行为（只对照了官方文档，没有实际运行）；`katago version` 输出的后端行；Slurm 模板；浏览器 WebGPU 方案也没有试过。
+
+**Not verified**: a real KataGo, a real GPU, actual runs on Colab/Kaggle/LRZ (no accounts, and as requested KataGo was not run); library compatibility of `setup_katago.py` on the cloud images; the speed-up factors (all estimates); connections through SSH port forwarding, a reverse proxy or a vendor port mapping; how a real KataGo behaves with `reportDuringSearchEvery` and `terminate` (checked against the official documentation only, not run); the backend line of the `katago version` output; the Slurm template; the browser WebGPU option was not tried.
 
 ## 来源（访问日期 2026-11-01） / Sources (accessed 2026-11-01)
 
