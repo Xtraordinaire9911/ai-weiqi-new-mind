@@ -7,10 +7,6 @@ import pytest
 
 from conftest import PIPELINE
 
-# mkfix.py is rewritten in a later commit of this branch.
-LEGACY = {"mkfix.py"}
-
-
 def _sources():
     for f in sorted(glob.glob(os.path.join(PIPELINE, "*.py"))):
         name = os.path.basename(f)
@@ -36,8 +32,8 @@ def _is_err_file(call):
 
 @pytest.mark.parametrize("name,tree", list(_sources()), ids=lambda v: v if isinstance(v, str) else "")
 def test_outputs_are_written_atomically(name, tree):
-    if name in LEGACY or name == "wqutil.py":
-        pytest.skip("not covered")
+    if name == "wqutil.py":
+        pytest.skip("this is where atomic_write_* lives")
     bad = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
@@ -55,8 +51,6 @@ def test_outputs_are_written_atomically(name, tree):
 @pytest.mark.parametrize("name,tree", list(_sources()), ids=lambda v: v if isinstance(v, str) else "")
 def test_text_io_names_its_encoding(name, tree):
     """Incident: json read with the platform default (cp936) instead of utf-8."""
-    if name in LEGACY:
-        pytest.skip("not covered")
     bad = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):

@@ -2,7 +2,8 @@
 import json,os,sys,subprocess,glob,re,threading,time,traceback
 from concurrent.futures import ThreadPoolExecutor
 from treesync import tree_fingerprint,check_analysis,check_kp,kp_ident,USABLE
-import sgfcheck
+import sgfcheck,fixtext
+from collections import Counter
 from wqutil import atomic_write_json,atomic_write_text,read_json,find_ffmpeg,setup_stdio,utf8_env,Log,Manifest,retry_with_backoff   # atomic outputs: a kill mid-write must not leave partial files
 # Dirs come from env vars when set (tests, another machine); the defaults are the original Windows paths.
 HERE=os.path.dirname(os.path.abspath(__file__))   # sibling scripts (tr.py, board.py, analyze2.py) are looked up here, not in a hard coded dir
@@ -146,19 +147,16 @@ def build_tree(vids):
 L='ABCDEFGHJKLMNOPQRST';gtp=lambda k:L[k%C]+str(19-k//C);sg=lambda k:chr(97+k%C)+chr(97+k//C)
 sg_=lambda m:chr(97+L.index(m[0]))+chr(97+19-int(m[1:]))
 CN={'B':'黑','W':'白'}
-FIX=[('黑旗','黑棋'),('白旗','白棋'),('黑鸡','黑棋'),('白鸡','白棋'),('拖鲜','脱先'),('脱鲜','脱先'),('拖先','脱先'),('争子','征子'),('正子','征子'),('结材','劫材'),('新位','星位'),('小木','小目'),('一肩','一间'),('拖角','托角'),('拖脚','托角'),('煎顶','尖顶'),('二肩','二间'),('小煎','小尖'),('煎冲','尖冲'),('加击','夹击'),('高加','高夹'),('低加','低夹'),('斑','扳'),('棋型','棋形')]
-def fix(t):
-    try:DD=[tuple(x) for x in json.load(open(os.path.join(W,'fixdict.json'),encoding='utf-8'))]
-    except Exception:DD=[]
-    for a,b in sorted(FIX+DD,key=lambda x:-len(x[0])):t=t.replace(a,b)
-    return t.replace('拖延','@@').replace('拖','托').replace('@@','拖延')
+FIRED=Counter()   # which typo rules fired while merging the current group (written to fixlog_<group>.json)
+def fix(t):   # typo dictionary: built in rules + W/fixdict.json, longest first, repeated until stable (see fixtext.py), idempotent
+    return fixtext.fixer_for(os.path.join(W,'fixdict.json')).apply(t,FIRED)
 def mm(vi,t):return '@%d|%d:%02d'%(vi,t//60,t%60)
 def esc(s):return s.replace('\\','\\\\').replace(']','\\]')
 def clean_cands(cs):   # keep candidates whose move is a board coordinate; 'pass' or garbage would put an invalid entry into AN[]
     return [dict(m,pv=[x for x in m['pv'] if sgfcheck.GTP.fullmatch(x)]) for m in cs if sgfcheck.GTP.fullmatch(m['m'])]
 DUMP=[]
 def merge(N,A,vids,name,summ='',KP={}):
-    DUMP.clear()   # a failed merge of an earlier group must not leak its nodes into this group's kpin dump
+    DUMP.clear();FIRED.clear()   # a failed merge of an earlier group must not leak its nodes into this group's kpin dump
     T=[read_json(os.path.join(D(i),'t.json')) for i in vids]
     IV=sorted((a,b,k,vi) for k,n in enumerate(N) if not n['dead'] for a,b,vi in n['v'])
     SEG={}
@@ -289,7 +287,10 @@ def stageB(name,idxs,visits=150,force=False,planned=None):
     if stamp:KPraw['_meta']=stamp;atomic_write_json(kp,KPraw,ensure_ascii=False)   # remember which tree the notes were written for
     if kst not in ('ok','missing'):log('B WARN',name,'key points:',kst,kmsg)
     rep['key_points']={'status':kst,'message':kmsg,'notes':len(KP)}
+    if not os.path.exists(os.path.join(W,'fixdict.json')):log('B WARN',name,'no fixdict.json in',W,'- only the built in typo rules are used')
     sgf=merge(N,A,idxs,name,summ,KP)
+    atomic_write_json(os.path.join(W,'fixlog_'+safe+'.json'),dict(FIRED.most_common()),ensure_ascii=False,indent=1)   # which typo rules fired, for review
+    log('B typo rules fired',sum(FIRED.values()),'times; most used:',fixtext.top(FIRED));FIRED.clear()
     atomic_write_json(os.path.join(W,'kpin_'+safe+'.json'),DUMP[:],ensure_ascii=False);DUMP.clear()
     atomic_write_json(side,kp_ident(N))   # which tree this kpin dump describes (used to place the kp notes written from it)
     done,why=write_sgf(sgf_path(name),sgf,force=force or bool(os.environ.get('WEIQI_FORCE')))
