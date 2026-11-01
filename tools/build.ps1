@@ -2,13 +2,14 @@
 # 用法: powershell -ExecutionPolicy Bypass -File tools/build.ps1
 $root=Split-Path $PSScriptRoot; $u=New-Object Text.UTF8Encoding $false
 function Clean($s){ ($s -replace '[\/:*?"<>|？！，：。“”、…\s]+','') }
+# Backslash and ] must be escaped inside SGF text values, otherwise the placeholder file is not valid SGF (tools/check_repo.py catches this)
+function Esc($s){ ($s -replace '\\','\\' -replace '\]','\]') }
 $cols=@()
 # Credit header for every generated SGF root: AP (application), CP (copyright and license line) and SO (source), so the credit travels with the file. Keep the wording in sync with NOTICE.md and pipeline/orch2.py.
-function EscSgf($s){ ($s -replace '\\','\\' -replace '\]','\]') }   # ] and \ must be escaped inside a property value
 $repoUrl='https://github.com/Xtraordinaire9911/ai-weiqi-new-mind'
 $ver=if(Test-Path "$root\VERSION"){(Get-Content -Raw "$root\VERSION").Trim()}else{'unknown'}
 $creditCp="Based on ai-weiqi-new-mind by Xtraordinaire9911 ($repoUrl), licensed under PolyForm Noncommercial 1.0.0 (code) and CC BY-NC-SA 4.0 (data and docs). The teacher commentary text belongs to 陈林涛 and is not covered by these licenses."
-$credit="AP[$(EscSgf "ai-weiqi-new-mind:$ver")]CP[$(EscSgf $creditCp)]SO[$(EscSgf $repoUrl)]"
+$credit="AP[$(Esc "ai-weiqi-new-mind:$ver")]CP[$(Esc $creditCp)]SO[$(Esc $repoUrl)]"
 foreach($sd in Get-ChildItem "$root\data\sources" -Directory){
   $plan=Get-Content -Raw -Encoding utf8 "$($sd.FullName)\plan.json"|ConvertFrom-Json
   $idx=Get-Content -Raw -Encoding utf8 "$($sd.FullName)\index.json"|ConvertFrom-Json
@@ -24,7 +25,7 @@ foreach($sd in Get-ChildItem "$root\data\sources" -Directory){
     $f="$dir\$($g.name).sgf"
     if(-not (Test-Path $f)){
       $c=($g.vids|%{"$($_.bvid) $($_.title)"}) -join "`n"
-      [IO.File]::WriteAllText($f,"(;GM[1]FF[4]CA[UTF-8]SZ[19]KM[6.5]GN[$($g.name)]PC[$($plan.name)]$($credit)C[来源视频:`n$c`n`n(待填充: 变化分支 + 口述解析; 解析写在各节点C[]里, 可用 @mm:ss 标注视频时间点)])",$u)
+      [IO.File]::WriteAllText($f,"(;GM[1]FF[4]CA[UTF-8]SZ[19]KM[6.5]GN[$(Esc $g.name)]PC[$(Esc $plan.name)]$($credit)C[来源视频:`n$(Esc $c)`n`n(待填充: 变化分支 + 口述解析; 解析写在各节点的 C 属性里, 可用 @mm:ss 标注视频时间点)])",$u)
     }
     $cols+=[pscustomobject]@{id="$($sd.Name)/$($plan.series.($g.ser))/$($g.name)";source=$sd.Name;sourceName=$plan.name;series=$plan.series.($g.ser);name=$g.name;videos=@($g.vids|%{@{bvid=$_.bvid;title=$_.title}});sgf=[IO.File]::ReadAllText($f)}
   }

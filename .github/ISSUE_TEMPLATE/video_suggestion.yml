@@ -1,0 +1,23 @@
+name: 视频建议 / Video suggestion
+description: 建议把某个视频系列加入定式库 / Suggest a video series that could be added to the library
+title: "video: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        给出链接和一句理由就够了。请不要附上视频文件或完整的转写稿。
+
+        A link and a short reason are enough. Please do not attach video files or full transcripts.
+  - type: input
+    id: link
+    attributes:
+      label: 视频或合集的链接 / Link to the video or playlist
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: 为什么适合收录 / Why it would be a good fit
+    validations:
+      required: true

@@ -1,28 +1,107 @@
 # 无人值守流水线: 视频(下载->转写->识谱) -> 按SGF分组合并树 -> KataGo局部分析 -> 合成带解析SGF
-import json,os,sys,subprocess,glob,re,threading,time,traceback
+import os,sys,subprocess,re,threading,time,traceback
 from concurrent.futures import ThreadPoolExecutor
-W=r'D:\tmp\work';V=r'D:\tmp\vid';PROJ=r'D:\workspace\fun\Weiqi\Weiqi_AI\josekiapp'
-PY=os.environ['LOCALAPPDATA']+r'\Programs\Python\Python312\python.exe'
-FF=glob.glob(os.environ['LOCALAPPDATA']+r'\Microsoft\WinGet\Packages\Gyan.FFmpeg*\**\ffmpeg.exe',recursive=True)[0]
-IDX=json.load(open(PROJ+r'\data\sources\chenlintao\index.json',encoding='utf-8-sig'))
-PLAN=json.load(open(PROJ+r'\data\sources\chenlintao\plan.json',encoding='utf-8-sig'))
+from treesync import tree_fingerprint,check_analysis,check_kp,kp_ident,USABLE
+import sgfcheck,fixtext
+from collections import Counter
+from wqutil import atomic_write_json,atomic_write_text,read_json,find_ffmpeg,setup_stdio,utf8_env,Log,Manifest,retry_with_backoff,single_instance   # atomic outputs: a kill mid-write must not leave partial files
+# Dirs come from env vars when set (tests, another machine); the defaults are the original Windows paths.
+HERE=os.path.dirname(os.path.abspath(__file__))   # sibling scripts (tr.py, board.py, analyze2.py) are looked up here, not in a hard coded dir
+W=os.environ.get('WEIQI_WORK',r'D:\tmp\work');V=os.environ.get('WEIQI_VID',r'D:\tmp\vid')
+PROJ=os.environ.get('WEIQI_PROJ',r'D:\workspace\fun\Weiqi\Weiqi_AI\josekiapp')
+SOURCE=os.environ.get('WEIQI_SOURCE','chenlintao');SEASON=int(os.environ.get('WEIQI_SEASON','1500387'))   # uploader folder under data/sources + playlist (season) id
+MAXIDX=int(os.environ.get('WEIQI_MAX_IDX','49'))   # groups that contain a later video are skipped (not downloaded yet)
+def _find_py():   # interpreter for the child scripts: env, the Python 3.12 this pipeline was built with, else the current one
+    if os.environ.get('WEIQI_PY'):return os.environ['WEIQI_PY']
+    c=os.path.join(os.environ.get('LOCALAPPDATA',''),'Programs','Python','Python312','python.exe')
+    return c if os.path.exists(c) else sys.executable
+PY=_find_py()
+FF=find_ffmpeg()   # None when missing: stageA reports a clear error instead of an IndexError at import time
+def load_sources():
+    """(Re)load index.json and plan.json of SOURCE. Returns an error text instead of raising, so importing this module never fails."""
+    global IDX,PLAN,vid
+    d=os.path.join(PROJ,'data','sources',SOURCE)
+    try:IDX=read_json(os.path.join(d,'index.json'));PLAN=read_json(os.path.join(d,'plan.json'))
+    except (OSError,ValueError) as e:IDX,PLAN,vid=[],{'merge':{},'series':{}},{};return str(e)
+    vid={x['idx']:x for x in IDX if x['season']==SEASON};return ''
+SRC_ERR=load_sources()
 DL=threading.Semaphore(1)
-log=lambda *a:print(time.strftime('%H:%M:%S'),*a,flush=True)
-vid={x['idx']:x for x in IDX if x['season']==1500387}
-def D(i):return os.path.join(W,'v',str(i));
+log=Log(lambda:os.path.join(W,'logs','orch2.log'))   # console + utf-8 file W/logs/orch2.log (survives a cp936 console and restarts)
+ENV=utf8_env()   # utf-8 text mode for every child process
+def D(i):return os.path.join(W,'v',str(i))   # per video cache dir: v.mp4, t.json (transcript), b.json (board frames)
 # ---- 阶段A: 单视频 ----
-def stageA(i):
-    os.makedirs(D(i),exist_ok=True);b=vid[i]['bvid'];mp4=D(i)+r'\v.mp4'
-    if not os.path.exists(mp4):
+SLEEP=time.sleep   # indirection so tests can skip the waiting
+DL_TRIES=int(os.environ.get('WEIQI_DL_TRIES','4'));DL_BACKOFF=float(os.environ.get('WEIQI_DL_BACKOFF','60'))   # waits 60, 180, 540 s between tries
+DL_TIMEOUT=float(os.environ.get('WEIQI_DL_TIMEOUT','1800'));STAGE_TIMEOUT=float(os.environ.get('WEIQI_STAGE_TIMEOUT','7200'))   # a hung child must not hold a pool slot for ever
+RETRY_ROUNDS=int(os.environ.get('WEIQI_RETRY_ROUNDS','1'));RETRY_WAIT=float(os.environ.get('WEIQI_RETRY_WAIT','600'))   # second chance for failed videos at the end of a run
+FAILED=Manifest(lambda:os.path.join(W,'failed_videos.json'))   # which videos failed, in which stage, and why
+class StageError(RuntimeError):
+    def __init__(self,stage,msg):super().__init__(msg);self.stage=stage
+def tail(b,n=300):   # last bit of a child's stderr as text
+    return b.decode('utf-8','replace').strip()[-n:] if b else ''
+def failure_reason(err):
+    """One line that says why yt-dlp produced no file."""
+    m=re.search(r'HTTP Error (\d+)',err)
+    if m:return 'HTTP %s%s'%(m.group(1),' (throttled)' if m.group(1) in ('412','429','567') else '')
+    lines=[x.strip() for x in err.splitlines() if x.strip()]
+    return lines[-1][:200] if lines else 'yt-dlp produced no file and no error text'
+def probe_duration(path):
+    """Length in seconds from `ffmpeg -i`, None if unreadable. Catches truncated downloads and preview clips."""
+    if not FF:return None
+    try:r=subprocess.run([FF,'-hide_banner','-i',path],capture_output=True,env=ENV,timeout=60)
+    except (OSError,subprocess.TimeoutExpired):return None
+    m=re.search(r'Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)',r.stderr.decode('utf-8','replace'))
+    return int(m.group(1))*3600+int(m.group(2))*60+float(m.group(3)) if m else None
+def download(i):
+    """Fetch v.mp4 with backoff between tries. The download slot DL is held only while yt-dlp runs, never while waiting between tries,
+    so one throttled video (HTTP 567) cannot block the others, and after DL_TRIES it gives up instead of holding a pool slot for ever."""
+    b=vid[i]['bvid'];mp4=os.path.join(D(i),'v.mp4');want=vid[i].get('sec')
+    def attempt():
         with DL:
-            for k in range(40):
-                subprocess.run([PY,'-m','yt_dlp','-f','bv*[height<=720][vcodec^=avc]+ba/b[height<=720]/b','--merge-output-format','mp4','--ffmpeg-location',os.path.dirname(FF),'--retries','10','-N','1','--sleep-requests','1','-o',mp4,'https://www.bilibili.com/video/'+b],capture_output=True)
-                if os.path.exists(mp4) and os.path.getsize(mp4)>1e6:break
-                time.sleep(45)
-            else:raise RuntimeError('download failed %d'%i)
-    if not os.path.exists(D(i)+r'\t.json'):subprocess.run([PY,W+r'\tr.py',mp4,D(i)+r'\t.json'],check=True,capture_output=True)
-    if not os.path.exists(D(i)+r'\b.json'):subprocess.run([PY,W+r'\board.py',mp4,D(i)+r'\b.json',FF],check=True,capture_output=True)
+            try:r=subprocess.run([PY,'-m','yt_dlp','-f','bv*[height<=720][vcodec^=avc]+ba/b[height<=720]/b','--merge-output-format','mp4','--ffmpeg-location',os.path.dirname(FF),'--retries','10','-N','1','--sleep-requests','1','-o',mp4,'https://www.bilibili.com/video/'+b],capture_output=True,env=ENV,timeout=DL_TIMEOUT)
+            except subprocess.TimeoutExpired:return False,'yt-dlp timed out after %ds'%DL_TIMEOUT
+        if os.path.exists(mp4) and os.path.getsize(mp4)>1e6:
+            got=probe_duration(mp4)
+            if got and want and got<0.8*want:   # truncated, or a different (preview) video
+                os.replace(mp4,mp4+'.short');return False,'file too short: %ds, expected %ds'%(got,want)
+            return True,''
+        return False,failure_reason(r.stderr.decode('utf-8','replace'))
+    ok,why=retry_with_backoff(attempt,tries=DL_TRIES,base=DL_BACKOFF,sleep=lambda s:SLEEP(s),log=lambda *a:log('A',i,*a))
+    if not ok:raise StageError('download',why)
+def child(stage,args):
+    """Run a stage script. A failure carries the stage name and the end of its stderr (it used to be captured and dropped)."""
+    try:r=subprocess.run(args,capture_output=True,env=ENV,timeout=STAGE_TIMEOUT)
+    except subprocess.TimeoutExpired:raise StageError(stage,'timed out after %ds'%STAGE_TIMEOUT)
+    if r.returncode:raise StageError(stage,'exit code %d: %s'%(r.returncode,tail(r.stderr)))
+def rejected(p):
+    """Reason when a stage already rejected this video (<name>.rej.json), so the heavy work is not repeated for the same verdict.
+    WEIQI_RETRY_REJECTED=1 forgets old verdicts (after fixing the recogniser, say)."""
+    rj=os.path.splitext(p)[0]+'.rej.json'
+    if not os.path.exists(rj):return ''
+    if os.environ.get('WEIQI_RETRY_REJECTED'):os.remove(rj);return ''
+    return '; '.join(read_json(rj,default={}).get('reasons',['rejected']))
+def stageA(i):
+    if not FF:raise StageError('setup','ffmpeg not found (set FFMPEG=path)')
+    os.makedirs(D(i),exist_ok=True);mp4=os.path.join(D(i),'v.mp4');tj=os.path.join(D(i),'t.json');bj=os.path.join(D(i),'b.json')
+    for p in (tj,bj):   # a json left half written by a killed run is moved aside, so its stage runs again
+        if os.path.exists(p):read_json(p,default=None,quarantine=True)
+    # board first: its layout check is cheap and a video that fails it (other layout) saves the long whisper run
+    todo=[(p,stage,cmd) for p,stage,cmd in ((bj,'board',[PY,os.path.join(HERE,'board.py'),mp4,bj,FF]),(tj,'transcribe',[PY,os.path.join(HERE,'tr.py'),mp4,tj])) if not os.path.exists(p)]
+    for p,stage,_ in todo:
+        why=rejected(p)
+        if why:raise StageError(stage,'rejected earlier: '+why)   # before any download: the verdict would be the same
+    if todo and not os.path.exists(mp4):download(i)   # nothing to do when both results exist, even if the video file is gone
+    for p,stage,cmd in todo:child(stage,cmd)
     log('A done',i,vid[i]['title'])
+def process_video(i):
+    """stageA that never raises. True when the video is ready; otherwise False, with the reason in the log and in failed_videos.json."""
+    try:stageA(i);FAILED.clear(i);return True
+    except Exception as e:
+        stage=getattr(e,'stage','error');why=str(e) or e.__class__.__name__;v=vid.get(i,{})
+        log('A FAIL',i,v.get('title',''),'|',stage,'|',why)
+        try:FAILED.record(i,bvid=v.get('bvid'),title=v.get('title'),stage=stage,reason=why[:400])
+        except OSError:pass
+        return False
 # ---- 分组树 (多视频合并) ----
 C=18;DT=1/6
 def build_tree(vids):
@@ -31,7 +110,7 @@ def build_tree(vids):
     def new(pos,par,mv,t,vi,setup=False):
         nodes.append({'pos':pos,'par':par,'mv':mv,'v':[[t,t+DT,vi]],'ch':[],'setup':setup});nodes[par]['ch'].append(len(nodes)-1);return len(nodes)-1
     for vi,i in enumerate(vids):
-        fr=json.load(open(D(i)+r'\b.json'));cur=None;prevs=None
+        fr=read_json(os.path.join(D(i),'b.json'));cur=None;prevs=None
         for t,s in fr:
             if s is None:continue
             if s==prevs:
@@ -68,14 +147,13 @@ def build_tree(vids):
 L='ABCDEFGHJKLMNOPQRST';gtp=lambda k:L[k%C]+str(19-k//C);sg=lambda k:chr(97+k%C)+chr(97+k//C)
 sg_=lambda m:chr(97+L.index(m[0]))+chr(97+19-int(m[1:]))
 CN={'B':'黑','W':'白'}
-FIX=[('黑旗','黑棋'),('白旗','白棋'),('黑鸡','黑棋'),('白鸡','白棋'),('拖鲜','脱先'),('脱鲜','脱先'),('拖先','脱先'),('争子','征子'),('正子','征子'),('结材','劫材'),('新位','星位'),('小木','小目'),('一肩','一间'),('拖角','托角'),('拖脚','托角'),('煎顶','尖顶'),('二肩','二间'),('小煎','小尖'),('煎冲','尖冲'),('加击','夹击'),('高加','高夹'),('低加','低夹'),('斑','扳'),('棋型','棋形')]
-def fix(t):
-    try:DD=[tuple(x) for x in json.load(open(os.path.join(W,'fixdict.json'),encoding='utf-8'))]
-    except Exception:DD=[]
-    for a,b in sorted(FIX+DD,key=lambda x:-len(x[0])):t=t.replace(a,b)
-    return t.replace('拖延','@@').replace('拖','托').replace('@@','拖延')
+FIRED=Counter()   # which typo rules fired while merging the current group (written to fixlog_<group>.json)
+def fix(t):   # typo dictionary: built in rules + W/fixdict.json, longest first, repeated until stable (see fixtext.py), idempotent
+    return fixtext.fixer_for(os.path.join(W,'fixdict.json')).apply(t,FIRED)
 def mm(vi,t):return '@%d|%d:%02d'%(vi,t//60,t%60)
 def esc(s):return s.replace('\\','\\\\').replace(']','\\]')
+def clean_cands(cs):   # keep candidates whose move is a board coordinate; 'pass' or garbage would put an invalid entry into AN[]
+    return [dict(m,pv=[x for x in m['pv'] if sgfcheck.GTP.fullmatch(x)]) for m in cs if sgfcheck.GTP.fullmatch(m['m'])]
 DUMP=[]
 # Credit header for every generated SGF root: AP (application), CP (copyright and license line) and SO (source), so the credit travels with the file. Keep the wording in sync with NOTICE.md and tools/build.ps1.
 REPO_URL='https://github.com/Xtraordinaire9911/ai-weiqi-new-mind'
@@ -85,7 +163,8 @@ def credit_props():
     except OSError:ver='unknown'
     return 'AP[%s]CP[%s]SO[%s]'%(esc('ai-weiqi-new-mind:'+ver),esc(CREDIT_CP),esc(REPO_URL))
 def merge(N,A,vids,name,summ='',KP={}):
-    T=[json.load(open(D(i)+r'\t.json',encoding='utf-8')) for i in vids]
+    DUMP.clear();FIRED.clear()   # a failed merge of an earlier group must not leak its nodes into this group's kpin dump
+    T=[read_json(os.path.join(D(i),'t.json')) for i in vids]
     IV=sorted((a,b,k,vi) for k,n in enumerate(N) if not n['dead'] for a,b,vi in n['v'])
     SEG={}
     for vi,tt in enumerate(T):
@@ -108,7 +187,9 @@ def merge(N,A,vids,name,summ='',KP={}):
     def ai(k):
         a=A.get('%d'%k)
         if not a or 'cand' not in a:return '',''
-        c0=a['cand'];srch=[m for m in c0 if not m.get('f')];tv=max([m['v'] for m in srch] or [1])
+        c0=clean_cands(a['cand'])
+        if not c0:return '',''
+        srch=[m for m in c0 if not m.get('f')];tv=max([m['v'] for m in srch] or [1])
         c=[m for m in c0 if m.get('f') or m['v']>=max(5,.08*tv)] or c0[:1]
         best=max(c,key=lambda m:m['s']);c=sorted(c,key=lambda m:-m['s']);ls=[]
         def cs(m):return "⟨%s⟩%s"%(m['m'],"最优" if m is best else "%+.1f目"%(m['s']-best['s']))+("(老师走的)" if m.get('f') else "")
@@ -151,44 +232,153 @@ def merge(N,A,vids,name,summ='',KP={}):
         ch=live(k)
         if len(ch)==1:return s+node(ch[0])
         return s+''.join('('+node(c)+')' for c in ch)
-    return '(;GM[1]FF[4]CA[UTF-8]SZ[19]KM[6.5]GN[%s]PC[陈林涛 %s]%s%s)'%(name,' '.join(vid[i]['bvid'] for i in vids),credit_props(),node(0))
+    return '(;GM[1]FF[4]CA[UTF-8]SZ[19]KM[6.5]GN[%s]PC[%s]%s%s)'%(esc(name),esc((PLAN.get('name') or SOURCE)+' '+' '.join(vid[i]['bvid'] for i in vids)),credit_props(),node(0))   # GN/PC are escaped like every other text value; credit_props() escapes its own values
 # ---- 阶段B: 分组 ----
+def sgf_path(name):   # data/sgf/<uploader>/<series>/<group>.sgf; the series folder name comes from plan.json
+    return os.path.join(PROJ,'data','sgf',SOURCE,PLAN['series'][str(SEASON)],name+'.sgf')
+def validate_plan():
+    """Problems in index.json / plan.json that would otherwise show up much later as a KeyError or a stray file. Every new uploader brings its own pair of files."""
+    ser=str(SEASON);bad=[]
+    merge_=PLAN.get('merge',{}).get(ser)
+    if merge_ is None:return ['plan.json has no merge list for season %s'%ser]
+    if ser not in PLAN.get('series',{}):bad.append('plan.json has no series name for season %s'%ser)
+    names={}
+    n_idx=sum(1 for x in IDX if x['season']==SEASON)
+    if n_idx!=len(vid):bad.append('index.json has %d entries for season %s but only %d different idx values'%(n_idx,ser,len(vid)))
+    for name,idxs in merge_:
+        if safe_name(name)!=name or not name.strip():bad.append('group name %r is not a usable file name (these characters are not allowed: \\ / : * ? " < > |)'%name)
+        if name in names:bad.append('group name %r appears twice'%name)
+        names[name]=1
+        for i in idxs:
+            if i not in vid:bad.append('group %r: video %s is not in index.json for season %s'%(name,i,ser))
+            elif not vid[i].get('bvid'):bad.append('video %s has no bvid in index.json'%i)
+    return bad
 def groups():
-    out=[]
-    for name,idxs in PLAN['merge']['1500387']:
-        if any(x>49 for x in idxs):continue
+    if SRC_ERR:raise RuntimeError('cannot read index.json/plan.json: '+SRC_ERR)
+    bad=validate_plan()
+    if bad:raise RuntimeError('plan.json does not fit index.json:\n  '+'\n  '.join(bad))
+    out,skipped=[],[]
+    for name,idxs in PLAN['merge'][str(SEASON)]:
+        if any(x>MAXIDX for x in idxs):skipped.append(name);continue
         out.append((name,idxs))
+    if skipped:log('groups left out because they contain a video above WEIQI_MAX_IDX=%d: %s'%(MAXIDX,', '.join(skipped)))   # silent before
     return out
-def stageB(name,idxs,visits=150):
-    safe=re.sub(r'[\\/:*?"<>|]','',name);base=os.path.join(W,'g_'+safe)
-    N=build_tree(idxs);json.dump(N,open(base+'.n.json','w'))
+def sgf_decision(path,sgf,force=False):
+    """May sgf replace the file at path? Not when it is invalid or poorer than the file already there (fewer nodes, less AI data or notes). Returns (ok, reasons)."""
+    bad=sgfcheck.validate(sgf)
+    if bad:return False,['new sgf is invalid: '+'; '.join(bad[:3])]
+    if not os.path.isdir(os.path.dirname(path)):return False,['target folder does not exist: '+os.path.dirname(path)]   # a wrong path must not create stray files
+    if os.path.exists(path) and not force:
+        with open(path,encoding='utf-8-sig') as f:old=f.read()
+        if not sgfcheck.validate(old):   # a damaged old file may be replaced, a good one only by an equal or richer one
+            why=sgfcheck.worse(sgfcheck.metrics(sgf),sgfcheck.metrics(old))
+            if why:return False,['would lose data: '+', '.join(why)]
+    return True,[]
+def write_sgf(path,sgf,force=False):
+    """sgf_decision, then an atomic write when it says yes. Returns (written, reasons)."""
+    ok,why=sgf_decision(path,sgf,force)
+    if ok:atomic_write_text(path,sgf)
+    return ok,why
+ANALYZE_TIMEOUT=float(os.environ.get('WEIQI_ANALYZE_TIMEOUT','21600'))   # seconds; a hung analysis must not block the pipeline for ever
+def run_analysis(base,a2,safe):
+    """Run analyze2.py for one group. Its output goes to W/logs/analyze_<group>.log (it used to be captured and thrown away, so progress was invisible)
+    and a failure is reported. Progress with ETA is also in <a2>.progress.log; an interrupted run resumes from <a2>.part next time."""
+    lp=os.path.join(W,'logs','analyze_%s.log'%safe);os.makedirs(os.path.dirname(lp),exist_ok=True)
+    try:
+        with open(lp,'ab') as lf:
+            r=subprocess.run([PY,os.path.join(HERE,'analyze2.py'),base+'.n.json',a2,'220','100'],stdout=lf,stderr=subprocess.STDOUT,env=ENV,timeout=ANALYZE_TIMEOUT)
+        if r.returncode:log('B WARN analyze2 exit code',r.returncode,'- see',lp)
+    except subprocess.TimeoutExpired:log('B WARN analyze2 timed out after',ANALYZE_TIMEOUT,'s, the checkpoint is kept and the next run continues')
+    except OSError as e:log('B WARN cannot run analyze2:',e)
+def safe_name(name):return re.sub(r'[\\/:*?"<>|]','',name)   # group name -> file name part
+def stageB(name,idxs,visits=150,force=False,planned=None,dry=False):
+    """Build one group. dry=True does everything in memory and writes nothing (not even caches): it only says what would happen to the SGF."""
+    safe=safe_name(name);base=os.path.join(W,'g_'+safe)
+    put=lambda f,*a,**k:None if dry else f(*a,**k)   # every write goes through this
+    rep={'group':name,'videos':list(idxs),'time':time.strftime('%Y-%m-%d %H:%M:%S')}   # one status record per group: status_<group>.json
+    if planned and set(planned)-set(idxs):   # some videos of the group failed: the SGF is built from the rest and rebuilt when they arrive
+        rep['missing_videos']=sorted(set(planned)-set(idxs));log('B WARN',name,'is partial, missing videos',rep['missing_videos'])
+    N=build_tree(idxs);fp=tree_fingerprint(N);put(atomic_write_json,base+'.n.json',N)
+    rep.update(tree_fp=fp,nodes=sum(1 for n in N if not n['dead']))
+    # --- analysis: it must belong to exactly this tree, otherwise redo it (or leave the AI part out); never merge a mismatch
     a2=base+'.a2.json'
-    if not os.path.exists(a2) and not os.environ.get('NOAN'):
-        subprocess.run([PY,W+r'\analyze2.py',base+'.n.json',a2,'220','100'],capture_output=True)
-    A=json.load(open(a2)) if os.path.exists(a2) else {}
-    summ=open(W+r'\summary_%s.md'%safe,encoding='utf-8').read() if os.path.exists(W+r'\summary_%s.md'%safe) else ''
-    kp=os.path.join(W,'kp_'+safe+'.json');KP=json.load(open(kp,encoding='utf-8')) if os.path.exists(kp) else {}
+    A=read_json(a2,default=None);st,msg=check_analysis(N,A)   # explicit utf-8; a damaged file reads as missing
+    if st not in USABLE and not os.environ.get('NOAN') and not dry:
+        if st!='missing':log('B',name,'analysis is',st,'-',msg,'-> running it again');os.replace(a2,a2+'.stale')   # keep the old file for inspection, it is never merged
+        run_analysis(base,a2,safe)
+        A=read_json(a2,default=None);st,msg=check_analysis(N,A)
+    if st not in USABLE:
+        if st!='missing':log('B WARN',name,'analysis not used:',st,msg)
+        A={}
+    elif st=='legacy':log('B WARN',name,msg)
+    rep['analysis']={'status':st,'message':msg}
+    # --- key point notes (kp): same rule. A kp file without _meta that is newer than the last kpin dump was written from that dump.
+    sp=os.path.join(W,'summary_%s.md'%safe);summ=open(sp,encoding='utf-8').read() if os.path.exists(sp) else ''
+    kp=os.path.join(W,'kp_'+safe+'.json');side=os.path.join(W,'kpin_'+safe+'.meta.json')
+    KPraw=read_json(kp,default=None);sc=read_json(side,default=None)
+    ident=sc if isinstance(KPraw,dict) and '_meta' not in KPraw and isinstance(sc,dict) and os.path.getmtime(kp)>=os.path.getmtime(side) else None
+    KP,kst,kmsg,stamp=check_kp(N,KPraw,ident,strict=bool(os.environ.get('WEIQI_STRICT')))
+    if stamp:KPraw['_meta']=stamp;put(atomic_write_json,kp,KPraw,ensure_ascii=False)   # remember which tree the notes were written for
+    if kst not in ('ok','missing'):log('B WARN',name,'key points:',kst,kmsg)
+    rep['key_points']={'status':kst,'message':kmsg,'notes':len(KP)}
+    if not os.path.exists(os.path.join(W,'fixdict.json')):log('B WARN',name,'no fixdict.json in',W,'- only the built in typo rules are used')
     sgf=merge(N,A,idxs,name,summ,KP)
-    json.dump(DUMP[:],open(os.path.join(W,'kpin_'+safe+'.json'),'w',encoding='utf-8'),ensure_ascii=False);DUMP.clear()
-    open(PROJ+r'\data\sgf\chenlintao\定式大全\%s.sgf'%name,'w',encoding='utf-8').write(sgf)
-    log('B done',name,sum(1 for n in N if not n['dead']),'nodes',len(sgf))
-if __name__=='__main__':
-    G=groups();need=sorted({i for _,ix in G for i in ix},key=lambda i:-IDXDUR.get(i,0)) if False else None
-    dur={x['idx']:x['sec'] for x in IDX if x['season']==1500387}
+    rep['key_points']['wanted']=len(DUMP)   # nodes with enough teacher text to deserve a note (the kpin dump)
+    if len(DUMP) and len(KP)<0.5*len(DUMP):log('B WARN',name,'only',len(KP),'key point notes for',len(DUMP),'nodes that have teacher text - was the kp file written?')
+    if isinstance(A.get('_meta'),dict) and A['_meta'].get('errors'):rep['analysis']['errors']=A['_meta']['errors'];log('B WARN',name,A['_meta']['errors'],'analysis queries returned an error')
+    put(atomic_write_json,os.path.join(W,'fixlog_'+safe+'.json'),dict(FIRED.most_common()),ensure_ascii=False,indent=1)   # which typo rules fired, for review
+    log('B typo rules fired',sum(FIRED.values()),'times; most used:',fixtext.top(FIRED));FIRED.clear()
+    put(atomic_write_json,os.path.join(W,'kpin_'+safe+'.json'),DUMP[:],ensure_ascii=False);DUMP.clear()
+    put(atomic_write_json,side,kp_ident(N))   # which tree this kpin dump describes (used to place the kp notes written from it)
+    force=force or bool(os.environ.get('WEIQI_FORCE'))
+    if dry:
+        done,why=sgf_decision(sgf_path(name),sgf,force)
+        log('DRY RUN',name,'-> would',('write' if done else 'REFUSE'),sgf_path(name),'| new',sgfcheck.metrics(sgf),'|','; '.join(why))
+        return done
+    done,why=write_sgf(sgf_path(name),sgf,force=force)
+    if not done:   # keep the candidate so the work is not lost, and say loudly why the old file stays
+        os.makedirs(os.path.join(W,'rejected'),exist_ok=True);atomic_write_text(os.path.join(W,'rejected',safe+'.sgf'),sgf)
+        log('B REFUSED',name,'; '.join(why),'| existing SGF kept, candidate saved in',os.path.join(W,'rejected'),'| WEIQI_FORCE=1 overrides')
+    rep['sgf']=dict(sgfcheck.metrics(sgf),written=done,reasons=why)
+    atomic_write_json(os.path.join(W,'status_'+safe+'.json'),rep,ensure_ascii=False,indent=1)
+    log('B done' if done else 'B NOT written',name,rep['nodes'],'nodes',len(sgf),'chars; analysis',st,'; key points',kst)
+    return done
+def run_pipeline(workers=2):
+    G=groups()
+    dur={x['idx']:x.get('sec',0) for x in IDX if x['season']==SEASON}   # a missing length must not stop the run
     gp=sorted(G,key=lambda g:(g[0]!='小目-小飞挂-二间高夹',-sum(dur[i] for i in g[1])))   # 总时长长的优先
     order=[i for _,ix in gp for i in ix]
-    ready={};ev=threading.Condition()
+    ready={};ev=threading.Condition();built={}
     def runA(i):
-        try:stageA(i);ok=1
-        except Exception as e:log('A FAIL',i,e);ok=0
-        with ev:ready[i]=ok;ev.notify_all()
-    pool=ThreadPoolExecutor(2)
+        ok=False
+        try:ok=process_video(i)
+        finally:   # always report back, whatever happened, or stageB would wait for this video for ever
+            with ev:ready[i]=int(ok);ev.notify_all()
+    pool=ThreadPoolExecutor(workers)
     for i in order:pool.submit(runA,i)
+    def build(name,idxs):
+        use=[i for i in idxs if ready.get(i)]
+        if not use:log('B skip',name,': no video of this group is ready');return
+        if tuple(use)==built.get(name):return   # nothing new since the last build
+        try:stageB(name,use,planned=idxs);built[name]=tuple(use)
+        except Exception:log('B FAIL',name,traceback.format_exc()[-300:])
     for name,idxs in gp:
         with ev:
             while not all(i in ready for i in idxs):ev.wait(30)
-        idxs=[i for i in idxs if ready[i]]
-        if not idxs:continue
-        try:stageB(name,idxs)
-        except Exception as e:log('B FAIL',name,traceback.format_exc()[-300:])
-    log('ALL DONE')
+        build(name,idxs)
+    for rd in range(RETRY_ROUNDS):   # throttling usually clears: failed videos get another go after a pause, then their groups are rebuilt
+        bad=[i for i in order if not ready.get(i)]
+        if not bad:break
+        log('retry round',rd+1,':',len(bad),'videos failed, waiting',RETRY_WAIT,'s');SLEEP(RETRY_WAIT)
+        for i in bad:ready[i]=int(process_video(i))
+        for name,idxs in gp:build(name,idxs)
+    pool.shutdown()
+    left=[i for i in order if not ready.get(i)]
+    log('ALL DONE'+(' - videos still failing: %s, see %s'%(left,os.path.join(W,'failed_videos.json')) if left else ''))
+    return built
+if __name__=='__main__':
+    setup_stdio()
+    lock=None if os.environ.get('WEIQI_NO_LOCK') else single_instance(os.path.join(W,'orch2.lock'))   # held until the process ends
+    if not os.environ.get('WEIQI_NO_LOCK') and lock is None:
+        log('another orch2.py is already running (lock',os.path.join(W,'orch2.lock'),'), not starting a second one. WEIQI_NO_LOCK=1 skips this check.');sys.exit(1)
+    run_pipeline()
