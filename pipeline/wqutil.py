@@ -10,6 +10,7 @@ log line and child process on utf-8 (Windows consoles default to cp936).
 import glob
 import json
 import os
+import random
 import shutil
 import sys
 import threading
@@ -150,3 +151,55 @@ class Log:
                 f.write(line + '\n')
         except OSError:
             pass
+
+
+def retry_with_backoff(attempt, tries=4, base=60.0, factor=3.0, cap=900.0, jitter=0.2, sleep=time.sleep, log=lambda *a: None):
+    """Call attempt() -> (ok, info) until it succeeds or `tries` are used up. Returns (ok, info of the last try).
+
+    The wait grows base, base*factor, ... up to `cap`, plus some jitter. HTTP 567/412 throttling needs minutes
+    to clear, so hammering every 45 s (the old loop) only extends it. The caller must not hold any shared
+    lock while this sleeps: the sleep happens here, outside attempt().
+    """
+    info = ''
+    for k in range(tries):
+        ok, info = attempt()
+        if ok:
+            return True, info
+        if k < tries - 1:
+            wait = min(cap, base * factor ** k) * (1 + random.uniform(0, jitter))
+            log('try %d/%d failed (%s), waiting %ds' % (k + 1, tries, info, wait))
+            sleep(wait)
+    return False, info
+
+
+class Manifest:
+    """Small json file {key: record} for things that failed (videos). Thread safe, atomic, utf-8."""
+
+    def __init__(self, path_fn):
+        self.path_fn = path_fn
+        self.lock = threading.Lock()
+
+    def _load(self):
+        d = read_json(self.path_fn(), default={}, quarantine=True)
+        return d if isinstance(d, dict) else {}
+
+    def record(self, key, **fields):
+        with self.lock:
+            d = self._load()
+            old = d.get(str(key), {})
+            fields['attempts'] = old.get('attempts', 0) + 1
+            fields['time'] = time.strftime('%Y-%m-%d %H:%M:%S')
+            d[str(key)] = fields
+            os.makedirs(os.path.dirname(self.path_fn()), exist_ok=True)
+            atomic_write_json(self.path_fn(), d, ensure_ascii=False, indent=1)
+
+    def clear(self, key):
+        with self.lock:
+            d = self._load()
+            if str(key) in d:
+                del d[str(key)]
+                atomic_write_json(self.path_fn(), d, ensure_ascii=False, indent=1)
+
+    def all(self):
+        with self.lock:
+            return self._load()

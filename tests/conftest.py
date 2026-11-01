@@ -27,9 +27,10 @@ def toy(tmp_path, monkeypatch):
     proj, work = tmp_path / "proj", tmp_path / "work"
     src = proj / "data" / "sources" / "toy"
     src.mkdir(parents=True)
-    idx = [{"season": 7, "idx": 1, "bvid": "BV1toy", "title": "toy video", "sec": 20}]
+    idx = [{"season": 7, "idx": 1, "bvid": "BV1toy", "title": "toy video", "sec": 20},
+           {"season": 7, "idx": 2, "bvid": "BV2toy", "title": "second toy video", "sec": 20}]
     (src / "index.json").write_text(json.dumps(idx), encoding="utf-8")
-    plan = {"series": {"7": "定式大全"}, "merge": {"7": [["toy-group", [1]]]}}
+    plan = {"series": {"7": "定式大全"}, "merge": {"7": [["toy-group", [1]], ["toy-pair", [1, 2]]]}}
     (src / "plan.json").write_text(json.dumps(plan, ensure_ascii=False), encoding="utf-8")
     out_dir = proj / "data" / "sgf" / "toy" / "定式大全"
     out_dir.mkdir(parents=True)
