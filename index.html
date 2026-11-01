@@ -34,6 +34,7 @@ footer{grid-column:1/-1;padding:3px 10px;border-top:1px solid var(--bd);backgrou
 <!-- Credit line: the licenses make credit a condition of reuse, so it stays visible on every page. Keep it when you copy or adapt this viewer. -->
 <footer id="cr"><a href="https://github.com/Xtraordinaire9911/ai-weiqi-new-mind" target="_blank" rel="noopener noreferrer">ai-weiqi-new-mind</a> · 代码 <a href="https://polyformproject.org/licenses/noncommercial/1.0.0" target="_blank" rel="noopener noreferrer">PolyForm Noncommercial 1.0.0</a> · 数据与文档 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noopener noreferrer">CC BY-NC-SA 4.0</a> · 讲解文字版权归陈林涛 · <a href="https://github.com/Xtraordinaire9911/ai-weiqi-new-mind/blob/main/NOTICE.md" target="_blank" rel="noopener noreferrer">署名与许可说明</a></footer>
 <script src="data/library.js"></script>
+<script src="engine_core.js"></script><script src="engine_net.js"></script><script src="engine_panel.js"></script>
 <script>
 // ---- SGF 解析: 节点 {p:{PROP:[vals]},c:[children],up} ----
 function parse(s){let i=0;
@@ -185,7 +186,7 @@ function panel(k){const co=(cur.p.C||[''])[0],box=$('cm');box.innerHTML='';
  // 手顺
  const ns=[];for(let n=cur;n;n=n.up)ns.unshift(n);$('path').innerHTML='';ns.forEach((n,i)=>{const mv=n.p.B||n.p.W;if(!mv)return;const s=document.createElement('span'),q=pt(mv[0]);s.textContent=`${i}.${n.p.B?'●':'○'}${gtp(q)}`;if(n===cur)s.className='cur';s.onclick=()=>go(n);$('path').appendChild(s)});
  $('info').textContent=`第${k}手 · ${cur.c.length?cur.c.length+'个后续':'终点'}`}
-function go(n){cur=n;sel=0;hot=[];ghost=[];hoverG=[];tipFor=null;ladderMsg='';draw();window.RC&&RC.onGo()} // let the compute switch auto-analyze the new node
+function go(n){cur=n;sel=0;hot=[];ghost=[];hoverG=[];tipFor=null;ladderMsg='';draw();window.RC&&RC.onGo();window.EnginePanel&&EnginePanel.onGo()} // let the compute switch auto-analyze the new node; the engine panel cancels a running search
 // ---- 交互 ----
 $('cm').onclick=e=>{const t=e.target;if(t.dataset.t!==undefined){open(`https://www.bilibili.com/video/${col.vb[+t.dataset.v]||col.vb[0]}?t=${t.dataset.t}`)}
  else if(t.dataset.pv){document.querySelectorAll('.chip').forEach(c=>c.classList.remove('hot'));t.classList.add('hot');const ps=t.dataset.pv.split(' ').map(fromGtp).filter(Boolean);hot=[];ghost=[];ladderMsg='';if(ps.length>1)ghost=ps;else hot=ps;drawBoard()}};
@@ -247,7 +248,7 @@ cv.onclick=e=>{const r=cv.getBoundingClientRect(),V=Vnow,span=Math.max(V.x1-V.x0
  const key=gtp([x,y]);document.querySelectorAll('.chip').forEach(c=>{const h=c.dataset.pv.split(' ').includes(key);c.classList.toggle('hot',h);if(h)c.scrollIntoView({block:'nearest'})});window.RC&&RC.click(x,y)}; // compute switch: trial move on an empty point
 // ---- Credit properties for "copy SGF" ----
 // The licenses make credit a condition of reuse, so a copied game record carries it too. AP, CP and SO are added to the root node, but only the ones the file does not have yet. The stored SGF text is never changed, only the copy.
-const VIEWER_VER='4.5',REPO_URL='https://github.com/Xtraordinaire9911/ai-weiqi-new-mind';
+const VIEWER_VER='4.6',REPO_URL='https://github.com/Xtraordinaire9911/ai-weiqi-new-mind';
 const CREDIT_CP='Based on ai-weiqi-new-mind by Xtraordinaire9911 ('+REPO_URL+'), licensed under PolyForm Noncommercial 1.0.0 (code) and CC BY-NC-SA 4.0 (data and docs). The teacher commentary text belongs to 陈林涛 and is not covered by these licenses.';
 const sgfEsc=v=>v.replace(/[\]\\]/g,'\\$&'); // inside a property value, ] and \ must be escaped
 function withCredit(sgf){
@@ -281,19 +282,16 @@ window.RC=(()=>{
  const KEY='josekiapp.rc.v1',S={mode:'off',auto:false,ep:{local:'http://127.0.0.1:8787',remote:''},tok:{local:'',remote:''}};
  try{const o=JSON.parse(localStorage.getItem(KEY)||'null');if(o){if(['off','local','remote'].includes(o.mode))S.mode=o.mode;S.auto=!!o.auto;Object.assign(S.ep,o.ep||{});Object.assign(S.tok,o.tok||{})}}catch(e){}
  const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}};
- let st={ok:false,msg:'',rtt:null,info:null},ctl=null,reg=null,nbusy=0,err='';
+ let st={ok:false,msg:'',rtt:null,info:null},ctl=null,reg=null,nbusy=0,err='';const subs=[]; // subs: listeners (the engine panel) told whenever the connection state changes
  const on=()=>S.mode!=='off',EP=()=>(S.ep[S.mode]||'').trim().replace(/\/+$/,''),TK=()=>S.tok[S.mode]||'',LAB={off:'缓存',local:'本机',remote:'远程'};
  const live=n=>on()&&n&&n.live&&n.live.mode===S.mode?n.live:null;
- async function call(path,body,ms,sig){const c=new AbortController(),t=setTimeout(()=>c.abort(),ms);if(sig)sig.addEventListener('abort',()=>c.abort());
-  try{const r=await fetch(EP()+path,{method:body?'POST':'GET',cache:'no-store',signal:c.signal,headers:Object.assign({Authorization:'Bearer '+TK()},body?{'Content-Type':'application/json'}:{}),body:body?JSON.stringify(body):undefined});
-   const j=await r.json().catch(()=>null);if(!r.ok)throw new Error((j&&j.error)||'HTTP '+r.status);return j}
-  catch(e){if(e.name==='AbortError')throw new Error(sig&&sig.aborted?'已取消':'超时');if(e instanceof TypeError)throw new Error('无法连接(桥未启动 / 地址错 / CORS 来源未放行 / https 页面连 http 地址)');throw e} // fetch() rejects with TypeError on network/CORS failures
-  finally{clearTimeout(t)}}
+ // All network traffic of the page goes through the single client in engine_net.js (it also keeps the "网络活动" list). It throws Errors whose message is the short Chinese reason, and "已取消" for an abort.
+ const call=(path,body,ms,sig)=>EngineNet.request({endpoint:EP(),token:TK(),path,body,ms,signal:sig});
  function paint(){const b=st.info||{};$('rcd').className=!on()?'':nbusy?'busy':st.ok?'ok':st.msg==='连接中…'?'':'bad';
   $('rcs').textContent=LAB[S.mode]+(on()?(nbusy?' · 分析中…':st.ok?' · '+st.rtt+'ms':' · 未连接'):'');
   $('rce').disabled=$('rct').disabled=$('rcc').disabled=!on();$('rca').disabled=!on()||!st.ok;
   $('rcn').textContent=!on()?'默认使用已生成的 AI 数据,不联网。选"本机/远程"后可实时分析当前局面,或点击棋盘空点试下(需先启动 katago_bridge.py,见 remote/README.md)。'
-   :(st.ok?`已连接 · ${st.rtt}ms · KataGo ${(b.katago&&b.katago.version)||'?'} · ${b.model||''}${b.fake?' · 模拟数据(非真实AI)':''}`:'未连接'+(st.msg?':'+st.msg:'')+' → 自动使用缓存数据')+(err?'\n⚠ '+err:'')}
+   :(st.ok?`已连接 · ${st.rtt}ms · KataGo ${(b.katago&&b.katago.version)||'?'} · ${b.model||''}${b.fake?' · 模拟数据(非真实AI)':''}`:'未连接'+(st.msg?':'+st.msg:'')+' → 自动使用缓存数据')+(err?'\n⚠ '+err:'');subs.forEach(f=>{try{f()}catch(e){}})}
  function sync(){$('rcm').value=S.mode;$('rce').value=S.ep[S.mode]||'';$('rct').value=S.tok[S.mode]||'';$('rcu').checked=S.auto;$('rcn').style.whiteSpace='pre-wrap'}
  async function test(){err='';if(!on()){st={ok:false,msg:''};return paint()}
   if(!EP()){st={ok:false,msg:'请先填写桥接地址'};return paint()}
@@ -323,28 +321,34 @@ window.RC=(()=>{
   if(!d.rootInfo||!d.moveInfos||!d.moveInfos.length)throw new Error('响应里没有候选点');
   const t=d.rootInfo.currentPlayer,sg=t=='B'?1:-1;
   return{t,score:sg*d.rootInfo.scoreLead,wr:t=='B'?d.rootInfo.winrate:1-d.rootInfo.winrate,fake:!!b.fake,
-   cand:d.moveInfos.slice().sort((a,c)=>a.order-c.order).slice(0,14).map(m=>({m:m.move,v:m.visits,s:sg*m.scoreLead,wr:t=='B'?m.winrate:1-m.winrate,p:m.prior,pv:m.pv.slice(0,8)}))}}
+   cand:d.moveInfos.slice().sort((a,c)=>a.order-c.order).slice(0,14).map(m=>({m:m.move,v:m.visits,s:sg*m.scoreLead,wr:t=='B'?m.winrate:1-m.winrate,p:m.prior,pv:m.pv.filter(v=>fromGtp(v)||v==='pass').slice(0,8)}))}}
+ // if the main search gave no reliable visit count for a teacher move (< max(10, 10% of max)), evaluate it separately and forced (position after the move, negated from the opponent's perspective); same as analyze2 phase 2. Also used by the engine panel.
+ async function forceTeacher(n,cand,tv,sig){const R=region(),need=[];
+  n.c.forEach(c=>{const mv=c.p.B||c.p.W,q=mv&&pt(mv[0]);if(!q||q[0]>=N)return;const m=gtp(q);if(!R.set.has(m))return;const cm=cand.find(x=>x.m===m);if(cm&&cm.v>=Math.max(10,.1*tv))return;need.push([c,m])});
+  const fr=[];let k=0;await Promise.all([0,1,2].map(async()=>{while(k<need.length){const[c,m]=need[k++];fr.push([m,conv(await call('/analyze',query(c,100,'f'),90000,sig))])}}));  // at most 3 concurrent requests, so the bridge is not overwhelmed
+  fr.forEach(([m,f])=>cand.push({m,v:100,s:-f.score,wr:1-f.wr,p:-1,pv:[m].concat(f.cand[0].pv.slice(0,7)),f:1}))}
+ // the candidate string the board draws: best = max side-to-move score among the reliable candidates (visits >= max(5, 8% of max)) and the forced-evaluated moves; the rest show "points worse than best"
+ function mkAN(cand,tv){const rel=cand.filter(x=>x.f||x.v>=Math.max(5,.08*tv)),best=Math.max(...rel.map(x=>x.s));
+  return rel.map(x=>{const q=fromGtp(x.m);return q?String.fromCharCode(97+q[0],97+q[1])+':'+(x.s-best).toFixed(1)+':'+x.p.toFixed(2)+':'+Math.round(x.wr*100)+':'+x.v+':'+x.pv.join(' '):''}).filter(Boolean).join(';')}
  async function analyze(n,force){if(!on()||!st.ok||!n||(!force&&(live(n)||n.busy)))return;err='';
   if(ctl)ctl.abort();const my=ctl=new AbortController();n.busy=1;nbusy++;paint();const t0=performance.now();
-  try{const R=region(),d=await call('/analyze',query(n,220,'a'),90000,my.signal),P=conv(d),cand=P.cand.slice(),tv=Math.max(...cand.map(x=>x.v)),need=[];
-   // if the main search gave no reliable visit count for a teacher move (< max(10, 10% of max)), evaluate it separately and forced (position after the move, negated from the opponent's perspective); same as analyze2 phase 2
-   n.c.forEach(c=>{const mv=c.p.B||c.p.W,q=mv&&pt(mv[0]);if(!q||q[0]>=N)return;const m=gtp(q);if(!R.set.has(m))return;const cm=cand.find(x=>x.m===m);if(cm&&cm.v>=Math.max(10,.1*tv))return;need.push([c,m])});
-   const fr=[];let k=0;await Promise.all([0,1,2].map(async()=>{while(k<need.length){const[c,m]=need[k++];fr.push([m,conv(await call('/analyze',query(c,100,'f'),90000,my.signal))])}}));  // at most 3 concurrent requests, so the bridge is not overwhelmed
-   fr.forEach(([m,f])=>cand.push({m,v:100,s:-f.score,wr:1-f.wr,p:-1,pv:[m].concat(f.cand[0].pv.slice(0,7)),f:1}));
-   // best = max side-to-move score among the reliable candidates (visits >= max(5, 8% of max)) and the forced-evaluated moves; the rest show "points worse than best"
-   const rel=cand.filter(x=>x.f||x.v>=Math.max(5,.08*tv)),best=Math.max(...rel.map(x=>x.s));
-   const an=rel.map(x=>{const q=fromGtp(x.m);return q?String.fromCharCode(97+q[0],97+q[1])+':'+(x.s-best).toFixed(1)+':'+x.p.toFixed(2)+':'+Math.round(x.wr*100)+':'+x.v+':'+x.pv.join(' '):''}).filter(Boolean).join(';');
+  try{const d=await call('/analyze',query(n,220,'a'),90000,my.signal),P=conv(d),cand=P.cand.slice(),tv=Math.max(...cand.map(x=>x.v));
+   await forceTeacher(n,cand,tv,my.signal);const an=mkAN(cand,tv);
    n.live={mode:S.mode,pl:P.t,an,vis:220,ms:Math.round(performance.now()-t0),fake:P.fake};if(cur===n)draw()}
   catch(e){if(e.message!=='已取消'){err='实时分析失败,已显示缓存数据:'+e.message}}
   finally{n.busy=0;nbusy=Math.max(0,nbusy-1);paint()}}
  return{live,
-  cap:n=>{const l=n.live;return`实时分析(${LAB[l.mode]}${l.fake?' · 模拟数据':''}) · ${l.vis}次 · ${(l.ms/1000).toFixed(1)}秒 · 只搜局部区域,颜色=行棋方`},
+  cap:n=>{const l=n.live;return`实时分析(${LAB[l.mode]}${l.fake?' · 模拟数据':''}) · ${l.vis}次 · ${(l.ms/1000).toFixed(1)}秒${l.run?' · 搜索中…':''} · 只搜局部区域,颜色=行棋方`},
   onGo,
-  click(x,y){if(!on()||!st.ok||x<0||y<0||x>=N||y>=N)return;const{b}=replay(cur);if(b[x][y])return;
+  // used by engine_panel.js: the same region / query / perspective conversion / candidate string / forced evaluation as the single-shot analysis above
+  region,query,conv,mkAN,forceTeacher,
+  cfg:()=>({mode:S.mode,endpoint:EP(),token:TK(),ok:st.ok,info:st.info,msg:st.msg}),
+  setMode(m){$('rcm').value=m;$('rcm').onchange()},refresh:test,on:f=>subs.push(f),
+  click(x,y,o){if(!on()||!st.ok||x<0||y<0||x>=N||y>=N)return;const{b}=replay(cur);if(b[x][y])return;
    if(!region().set.has(gtp([x,y]))){err='该点在讲解区域之外,不做局部分析';return paint()}
    const c=nextCol(cur),tmp={p:{[c==1?'B':'W']:[String.fromCharCode(97+x,97+y)]},c:[],up:cur};
    if(replay(tmp).b[x][y]!==c){err='该点不能下(自杀)';return paint()}
-   go(tmp);if(!tmp.busy)analyze(tmp,true)},   // play this move as a trial and analyze the opponent's replies in the new position
+   go(tmp);if(!tmp.busy&&!(o&&o.noAnalyze))analyze(tmp,true)},   // play this move as a trial and analyze the opponent's replies in the new position
   init(){sync();paint();
    $('rcm').onchange=()=>{S.mode=$('rcm').value;save();st={ok:false,msg:''};err='';sync();paint();if(on())test();else draw()};
    $('rce').onchange=()=>{S.ep[S.mode]=$('rce').value.trim();save();test()};$('rct').onchange=()=>{S.tok[S.mode]=$('rct').value;save();test()};
