@@ -59,7 +59,7 @@ The subject should stay under about 72 characters and has no final period. Mark 
 
 Types: `feat` for new features or new content, `fix` for bugs and wrong data, `docs`, `style`, `refactor`, `perf`, `test`, `build` for packaging such as rebuilding `data/library.js`, `chore` for housekeeping such as version bumps, and `revert`.
 
-类型:`feat` 用于新功能或新内容,`fix` 用于 bug 和错误的数据,另外有 `docs`、`style`、`refactor`、`perf`、`test`,`build` 用于打包类改动(例如重新生成 `data/library.js`),`chore` 用于版本号之类的杂务,以及 `revert`。
+类型:`feat` 用于新功能或新内容,`fix` 用于 bug 和错误的数据,另外有 `docs`、`style`、`refactor`、`perf`、`test`,`build` 用于打包类改动(例如重新打包 `data/library.js`),`chore` 用于版本号之类的杂务,以及 `revert`。
 
 Scopes (optional, lower case): `viewer` for index.html, `pipeline`, `data` for SGF files, sources and the packed library, `remote`, `tools`, `engine`, `docs`, `repo`, `release`.
 
