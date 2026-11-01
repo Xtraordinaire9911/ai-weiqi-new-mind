@@ -74,7 +74,7 @@ Scopes (optional, lower case): `viewer` for index.html, `pipeline`, `data` for S
 Examples of subjects that read well:
 
 ```
-feat(data): add star point small knight group
+feat(data): add star point small knight approach group
 fix(viewer): use the right color in variation previews
 fix(data): correct twelve transcription typos in the 3-3 group
 docs(remote): explain how to enable GPU on Kaggle
