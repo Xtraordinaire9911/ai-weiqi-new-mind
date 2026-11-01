@@ -10,25 +10,33 @@ This is not legal advice. It collects public sources and gives general suggestio
 
    The license files are added in a separate pull request (branch `feature/license`, PR 5), not in this one. Until that one is merged the repository stays "all rights reserved".
 
-2. 代码(`index.html`、`pipeline/`、`tools/`、`remote/`,以及 `engine-config/` 里我们自己写的部分)采用 PolyForm Strict License 1.0.0。它比下面对比分析里最先推荐的 PolyForm Noncommercial 更严:PolyForm Strict 只允许非商业使用,不允许分发,也不允许修改。选它,是因为目标不只是别人不能靠它盈利,还包括没有人可以转发代码或者分发改过的版本。允许的非商业用途(个人学习、研究、业余爱好项目、学校和大学等)与 PolyForm Noncommercial 一样([原文](https://github.com/polyformproject/polyform-licenses/blob/1.0.0/PolyForm-Strict-1.0.0.md))。
+2. 代码(`index.html`、`pipeline/`、`tools/`、`remote/`,以及 `engine-config/` 里我们自己写的部分)采用 PolyForm Noncommercial License 1.0.0。它允许任何非商业目的的使用、修改和分发(个人学习、研究、业余爱好项目、学校和大学等),条件是许可条款和 `Required Notice:` 行随副本一起传递。商业使用不在许可范围内([原文](https://github.com/polyformproject/polyform-licenses/blob/1.0.0/PolyForm-Noncommercial-1.0.0.md))。
 
-   Code (`index.html`, `pipeline/`, `tools/`, `remote/` and the parts of `engine-config/` that we wrote) is under the PolyForm Strict License 1.0.0. It is stricter than PolyForm Noncommercial, which the comparison below recommended first: PolyForm Strict allows noncommercial use only, with no distribution and no changes. It was chosen because the goal is not only that others cannot profit, but also that nobody republishes the code or ships a modified copy. The permitted noncommercial uses (personal study, research, hobby projects, schools and universities, and similar) stay the same as in PolyForm Noncommercial ([source text](https://github.com/polyformproject/polyform-licenses/blob/1.0.0/PolyForm-Strict-1.0.0.md)).
+   Code (`index.html`, `pipeline/`, `tools/`, `remote/` and the parts of `engine-config/` that we wrote) is under the PolyForm Noncommercial License 1.0.0. It allows use, modification and distribution for any noncommercial purpose (personal study, research, hobby projects, schools and universities, and similar), on the condition that the license terms and the `Required Notice:` line travel with every copy. Commercial use is outside the license ([source text](https://github.com/polyformproject/polyform-licenses/blob/1.0.0/PolyForm-Noncommercial-1.0.0.md)).
 
-3. 我们自己的数据和文档(SGF 变化树结构、评估数值、README 和 `docs/`,不含老师的讲解)采用 CC BY-NC-ND 4.0。任何人都可以在署名的前提下原样复制和分享,但只限非商业目的,不得分发改编后的版本([许可证概要](https://creativecommons.org/licenses/by-nc-nd/4.0/))。
+3. 我们自己的数据和文档(SGF 变化树结构、评估数值、README 和 `docs/`,不含老师的讲解)采用 CC BY-NC-SA 4.0。任何人都可以在署名的前提下复制、分享和改编,但只限非商业目的,改编后的版本必须使用相同的许可([许可证概要](https://creativecommons.org/licenses/by-nc-sa/4.0/))。
 
-   Our own data and docs (the SGF variation structure, the evaluation numbers, the README and `docs/`, without the teacher's commentary) are under CC BY-NC-ND 4.0. Anyone may copy and share them unchanged with credit, for noncommercial purposes only, and may not distribute adapted versions ([license summary](https://creativecommons.org/licenses/by-nc-nd/4.0/)).
+   Our own data and docs (the SGF variation structure, the evaluation numbers, the README and `docs/`, without the teacher's commentary) are under CC BY-NC-SA 4.0. Anyone may copy, share and adapt them with credit, for noncommercial purposes only, and adapted versions must carry the same license ([license summary](https://creativecommons.org/licenses/by-nc-sa/4.0/)).
 
-4. 老师的讲解文字不在上述任何许可证的范围内,正在迁移到私有仓库。公开仓库保留变化树、评估数据,以及带时间点的视频链接。
+4. 老师的讲解文字不在上述任何许可证的范围内,署名归原作者陈林涛,正在迁移到私有仓库。公开仓库保留变化树、评估数据,以及带时间点的视频链接。
 
-   The teacher's commentary is excluded from every license above and is being moved to a private repository. The public repository keeps the variation trees, the evaluations and the video links with time stamps.
+   The teacher's commentary is excluded from every license above, its credit goes to the original author 陈林涛, and it is being moved to a private repository. The public repository keeps the variation trees, the evaluations and the video links with time stamps.
 
 5. 外部贡献通过 DCO 签署(每个提交带一行 `Signed-off-by`)接收,再加一句话:维护者可以把贡献连同项目一起重新授权。最终措辞见 `CONTRIBUTING.md`。
 
    Outside contributions come in under a DCO sign off (a `Signed-off-by` line on each commit), plus a sentence saying the maintainer may relicense contributions together with the project. The final wording is in `CONTRIBUTING.md`.
 
-有一点需要请人把关:PolyForm Strict 不允许修改,而贡献者要准备 PR 就必须改代码。`CONTRIBUTING.md` 里邀请大家提交 PR 的话,加上贡献条款,本意就是给出这项许可,但这样的措辞够不够,要请律师判断。无论许可证怎么写,GitHub 上的 fork 仍然可以进行,因为 GitHub 的条款授予了这项权利,不过 fork 并不会让任何人获得比许可证更多的权利。
+6. 为什么这样决定:作者希望别人可以免费改编和再创作(非商业使用、修改和非商业再分发),但必须署名。这两份许可把署名变成法律条件,README、查看器页脚和 SGF 根节点里的 `AP`、`CP`、`SO` 属性则让正确署名既容易做到又容易被看到。署名的具体写法在 `NOTICE.md` 里。
 
-A point to have checked: PolyForm Strict does not allow making changes, and a contributor has to change the code to prepare a pull request. The invitation in `CONTRIBUTING.md` to send pull requests, together with the contribution terms, is meant to give that permission, but whether the wording is enough is a question for a lawyer. Forking on GitHub stays possible whatever the license says, because the GitHub terms grant it, but a fork does not give anyone more rights than the license does.
+   Why this decision: the author wants others to be able to remix the work for free, with noncommercial use, modification and noncommercial redistribution, but they have to credit it. The two licenses make credit a legal condition, and the README, the viewer footer and the `AP`, `CP` and `SO` properties in the SGF root node make correct credit easy to give and easy to see. The exact wording of the credit is in `NOTICE.md`.
+
+7. 考虑过但没有采用的更严方案:PolyForm Strict License 1.0.0(只允许非商业使用,不允许分发,也不允许修改),以及 CC BY-NC-ND 4.0(只允许署名后原样分享,不允许分发改编后的版本)。这份文档的上一版和第一版许可证 PR 曾选用它们,现在不再采用,因为它们同时挡住了作者希望鼓励的改编和再创作。
+
+   The stricter options that were considered and not chosen are the PolyForm Strict License 1.0.0 (noncommercial use only, no distribution and no changes) and CC BY-NC-ND 4.0 (unchanged sharing with credit only, no distribution of adapted versions). The previous version of this document and the first license pull request used them. They are dropped now because they also block the remixing that the author wants to encourage.
+
+有几点需要请人把关:(1) 许可证授予的修改和再分发自由,对已经被别人拿走的副本是不可撤销的;以后可以对新版本改用更严的条款,但管不到旧副本(见第 2 节)。(2) "非商业"有灰色地带,在德国尤其如此(见 3.7 和第 6 节)。(3) 署名只有在作品被分发或发布时才是法律要求,私下使用不需要署名。(4) PolyForm Noncommercial 本身允许修改,所以贡献者准备 PR 不再需要额外的许可;无论许可证怎么写,GitHub 上的 fork 也仍然可以进行,因为 GitHub 的条款授予了这项权利。
+
+A few points to have checked: (1) The freedom to modify and redistribute that the licenses grant is irrevocable for copies people have already taken. Stricter terms can be used for new versions later, but they do not reach old copies (see section 2). (2) "Noncommercial" has grey areas, in Germany especially (see 3.7 and section 6). (3) Credit is only legally required when the work is distributed or published, private use needs no credit. (4) PolyForm Noncommercial allows changes by itself, so a contributor needs no extra permission to prepare a pull request, and forking on GitHub stays possible whatever the license says, because the GitHub terms grant it.
 
 ## 0. 简短结论(写于决定之前,见上文) / Short answer (written before the decision, see above)
 
@@ -178,9 +186,9 @@ Grey cases include a personal blog with ads, internal use by a company's staff, 
 
 ## 4. 推荐方案 / Recommendation
 
-这是做出决定之前的推荐。文首的决定在两点上更严:代码用 PolyForm Strict 而不是 PolyForm Noncommercial,数据和文档用 CC BY-NC-ND 而不是 CC BY-NC-SA。本节其余内容,包括关于老师讲解文字的建议,仍然适用。
+这是做出决定之前的推荐,文首的决定与它一致:代码用 PolyForm Noncommercial,数据和文档用 CC BY-NC-SA。文首的决定曾一度改为更严的 PolyForm Strict 和 CC BY-NC-ND,后来又改了回来(理由见决定的第 6、7 点)。本节其余内容,包括关于老师讲解文字的建议,仍然适用。
 
-This was the recommendation before the decision. The decision at the top is stricter on two points: PolyForm Strict instead of PolyForm Noncommercial for the code, and CC BY-NC-ND instead of CC BY-NC-SA for data and docs. The rest of this section, including the advice on the teacher's commentary, still applies.
+This was the recommendation before the decision, and the decision at the top matches it: PolyForm Noncommercial for the code, CC BY-NC-SA for data and docs. The decision was briefly changed to the stricter PolyForm Strict and CC BY-NC-ND and then changed back (see points 6 and 7 of the decision for the reasons). The rest of this section, including the advice on the teacher's commentary, still applies.
 
 | 内容 / Content | 许可证 / License | 理由 / Reason |
 |---|---|---|
@@ -194,21 +202,21 @@ This was the recommendation before the decision. The decision at the top is stri
 
 If one license for everything (minus the teacher's text) is easier, PolyForm Noncommercial for the whole repository works, but it is worse for data and docs, and whether "software" covers plain data files is not verified. The split above is the better fit.
 
-决定之后需要新增的文件(目前都还不存在):
+按这个决定新增的文件(它们放在 PR 5 里,不在这个分支上):
 
-Files you would add when you decide (none of them exist yet):
+Files that follow from the decision (they are in PR 5, not on this branch):
 
 - `LICENSE`:PolyForm Noncommercial 1.0.0 全文,加上 `Required Notice:` 一行。
 
   `LICENSE` with the full PolyForm Noncommercial 1.0.0 text and the `Required Notice:` line.
 
-- `LICENSE-DATA.md`:CC BY-NC-SA 4.0,以及对老师文字的排除声明。
+- `LICENSE-DATA.txt`:CC BY-NC-SA 4.0 官方法律文本,对老师文字的排除写在 `NOTICE.md` 里。
 
-  `LICENSE-DATA.md` with CC BY-NC-SA 4.0 and the exclusion for the teacher's text.
+  `LICENSE-DATA.txt` with the official CC BY-NC-SA 4.0 legal code. The exclusion for the teacher's text is written in `NOTICE.md`.
 
-- `NOTICE.md`:第三方清单(第 5 节)、老师内容的声明和下架联系方式。
+- `NOTICE.md`:各部分适用的许可、署名写法、老师内容的声明、商业使用的联系方式和贡献条款。
 
-  `NOTICE.md` with the third party list (section 5), the teacher notice and a takedown contact.
+  `NOTICE.md` with the scope of each license, how to credit the project, the notice about the teacher's content, how to ask for commercial use and the contribution terms.
 
 - 可选:在源码文件开头加 `SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0`。
 
