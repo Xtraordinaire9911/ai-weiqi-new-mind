@@ -77,6 +77,13 @@ def fix(t):
 def mm(vi,t):return '@%d|%d:%02d'%(vi,t//60,t%60)
 def esc(s):return s.replace('\\','\\\\').replace(']','\\]')
 DUMP=[]
+# Credit header for every generated SGF root: AP (application), CP (copyright and license line) and SO (source), so the credit travels with the file. Keep the wording in sync with NOTICE.md and tools/build.ps1.
+REPO_URL='https://github.com/Xtraordinaire9911/ai-weiqi-new-mind'
+CREDIT_CP='Based on ai-weiqi-new-mind by Xtraordinaire9911 ('+REPO_URL+'), licensed under PolyForm Noncommercial 1.0.0 (code) and CC BY-NC-SA 4.0 (data and docs). The teacher commentary text belongs to 陈林涛 and is not covered by these licenses.'
+def credit_props():
+    try:ver=open(PROJ+r'\VERSION',encoding='utf-8').read().strip()
+    except OSError:ver='unknown'
+    return 'AP[%s]CP[%s]SO[%s]'%(esc('ai-weiqi-new-mind:'+ver),esc(CREDIT_CP),esc(REPO_URL))
 def merge(N,A,vids,name,summ='',KP={}):
     T=[json.load(open(D(i)+r'\t.json',encoding='utf-8')) for i in vids]
     IV=sorted((a,b,k,vi) for k,n in enumerate(N) if not n['dead'] for a,b,vi in n['v'])
@@ -144,7 +151,7 @@ def merge(N,A,vids,name,summ='',KP={}):
         ch=live(k)
         if len(ch)==1:return s+node(ch[0])
         return s+''.join('('+node(c)+')' for c in ch)
-    return '(;GM[1]FF[4]CA[UTF-8]SZ[19]KM[6.5]GN[%s]PC[陈林涛 %s]%s)'%(name,' '.join(vid[i]['bvid'] for i in vids),node(0))
+    return '(;GM[1]FF[4]CA[UTF-8]SZ[19]KM[6.5]GN[%s]PC[陈林涛 %s]%s%s)'%(name,' '.join(vid[i]['bvid'] for i in vids),credit_props(),node(0))
 # ---- 阶段B: 分组 ----
 def groups():
     out=[]
