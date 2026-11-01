@@ -248,7 +248,7 @@ function renderList(){const q=$('q').value.trim(),s=$('src').value,box=$('list')
  LIB.filter(c=>c.source===s&&(!q||c.name.includes(q)||c.videos.some(v=>v.title.includes(q)))).forEach(c=>{if(c.series!==ser){ser=c.series;box.insertAdjacentHTML('beforeend',`<h4>${c.sourceName} · ${ser}</h4>`)}const d=document.createElement('div');d.textContent=c.name;d.dataset.id=c.id;d.onclick=()=>open_(c);box.appendChild(d)})}
 [...new Set(LIB.map(c=>c.source))].forEach(s=>$('src').add(new Option(LIB.find(c=>c.source===s).sourceName,s)));
 $('src').onchange=$('q').oninput=renderList;renderList();
-{$('ver').textContent='界面 v4.2 · 数据 '+(window.LIBT||'旧缓存?');const M=LIB.length,D=LIB.filter(c=>c.sgf.length>1500).length,pg=$('prog');if(D<M){pg.style.display='block';pg.textContent=`内容生成中: ${D}/${M} 个定式已完成`}
+{$('ver').textContent='界面 v4.3 · 数据 '+(window.LIBT||'旧缓存?');const M=LIB.length,D=LIB.filter(c=>c.sgf.length>1500).length,pg=$('prog');if(D<M){pg.style.display='block';pg.textContent=`内容生成中: ${D}/${M} 个定式已完成`}
  open_(LIB.slice().sort((a,b)=>b.sgf.length-a.sgf.length)[0])}
 </script>
 <script>
