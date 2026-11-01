@@ -140,3 +140,13 @@ def test_stage_a_does_not_repeat_a_rejected_video(toy, monkeypatch):
     assert e.value.stage == "board"
     assert o.process_video(2) is False
     assert "rejected earlier" in json.load(open(os.path.join(toy.W, "failed_videos.json"), encoding="utf-8"))["2"]["reason"]
+
+
+def test_a_rejected_video_is_not_downloaded_again(toy, monkeypatch):
+    o = toy.o
+    monkeypatch.setattr(o, "FF", "/usr/bin/ffmpeg")
+    os.makedirs(o.D(2), exist_ok=True)   # no v.mp4 here, only the verdict of an earlier run
+    json.dump({"reasons": ["video is 1920x1080"]}, open(os.path.join(o.D(2), "b.rej.json"), "w"))
+    monkeypatch.setattr(o.subprocess, "run", lambda *a, **k: pytest.fail("neither download nor decode again"))
+    with pytest.raises(o.StageError, match="1920x1080"):
+        o.stageA(2)

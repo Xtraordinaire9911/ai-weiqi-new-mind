@@ -93,6 +93,24 @@ def test_plan_problems_are_named_before_anything_runs(toy):
         o.groups()
 
 
+def test_index_problems_are_named(toy):
+    o = toy.o
+    o.IDX.append({"season": 7, "idx": 1, "bvid": "BVdup", "title": "same idx twice", "sec": 5})
+    o.IDX.append({"season": 7, "idx": 3, "title": "no bvid"})
+    o.vid[3] = o.IDX[-1]
+    o.PLAN["merge"]["7"] = [["g", [1, 3]]]
+    problems = "\n".join(o.validate_plan())
+    assert "different idx values" in problems
+    assert "video 3 has no bvid" in problems
+
+
+def test_groups_left_out_by_max_idx_are_logged_not_silent(toy, monkeypatch, capsys):
+    monkeypatch.setattr(toy.o, "MAXIDX", 1)
+    names = [g[0] for g in toy.o.groups()]
+    assert names == ["toy-group"]
+    assert "toy-pair" in capsys.readouterr().out
+
+
 def test_missing_season_in_plan(toy):
     toy.o.PLAN["merge"] = {}
     assert "no merge list for season 7" in toy.o.validate_plan()[0]

@@ -1,5 +1,5 @@
 # 无人值守流水线: 视频(下载->转写->识谱) -> 按SGF分组合并树 -> KataGo局部分析 -> 合成带解析SGF
-import json,os,sys,subprocess,glob,re,threading,time,traceback
+import os,sys,subprocess,re,threading,time,traceback
 from concurrent.futures import ThreadPoolExecutor
 from treesync import tree_fingerprint,check_analysis,check_kp,kp_ident,USABLE
 import sgfcheck,fixtext
@@ -85,13 +85,13 @@ def stageA(i):
     os.makedirs(D(i),exist_ok=True);mp4=os.path.join(D(i),'v.mp4');tj=os.path.join(D(i),'t.json');bj=os.path.join(D(i),'b.json')
     for p in (tj,bj):   # a json left half written by a killed run is moved aside, so its stage runs again
         if os.path.exists(p):read_json(p,default=None,quarantine=True)
-    if not os.path.exists(mp4) and not (os.path.exists(tj) and os.path.exists(bj)):download(i)   # no download when only the video is gone
     # board first: its layout check is cheap and a video that fails it (other layout) saves the long whisper run
-    for p,stage,cmd in ((bj,'board',[PY,os.path.join(HERE,'board.py'),mp4,bj,FF]),(tj,'transcribe',[PY,os.path.join(HERE,'tr.py'),mp4,tj])):
-        if os.path.exists(p):continue
+    todo=[(p,stage,cmd) for p,stage,cmd in ((bj,'board',[PY,os.path.join(HERE,'board.py'),mp4,bj,FF]),(tj,'transcribe',[PY,os.path.join(HERE,'tr.py'),mp4,tj])) if not os.path.exists(p)]
+    for p,stage,_ in todo:
         why=rejected(p)
-        if why:raise StageError(stage,'rejected earlier: '+why)
-        child(stage,cmd)
+        if why:raise StageError(stage,'rejected earlier: '+why)   # before any download: the verdict would be the same
+    if todo and not os.path.exists(mp4):download(i)   # nothing to do when both results exist, even if the video file is gone
+    for p,stage,cmd in todo:child(stage,cmd)
     log('A done',i,vid[i]['title'])
 def process_video(i):
     """stageA that never raises. True when the video is ready; otherwise False, with the reason in the log and in failed_videos.json."""
@@ -236,21 +236,25 @@ def validate_plan():
     if merge_ is None:return ['plan.json has no merge list for season %s'%ser]
     if ser not in PLAN.get('series',{}):bad.append('plan.json has no series name for season %s'%ser)
     names={}
+    n_idx=sum(1 for x in IDX if x['season']==SEASON)
+    if n_idx!=len(vid):bad.append('index.json has %d entries for season %s but only %d different idx values'%(n_idx,ser,len(vid)))
     for name,idxs in merge_:
         if safe_name(name)!=name or not name.strip():bad.append('group name %r is not a usable file name (these characters are not allowed: \\ / : * ? " < > |)'%name)
         if name in names:bad.append('group name %r appears twice'%name)
         names[name]=1
         for i in idxs:
             if i not in vid:bad.append('group %r: video %s is not in index.json for season %s'%(name,i,ser))
+            elif not vid[i].get('bvid'):bad.append('video %s has no bvid in index.json'%i)
     return bad
 def groups():
     if SRC_ERR:raise RuntimeError('cannot read index.json/plan.json: '+SRC_ERR)
     bad=validate_plan()
     if bad:raise RuntimeError('plan.json does not fit index.json:\n  '+'\n  '.join(bad))
-    out=[]
+    out,skipped=[],[]
     for name,idxs in PLAN['merge'][str(SEASON)]:
-        if any(x>MAXIDX for x in idxs):continue
+        if any(x>MAXIDX for x in idxs):skipped.append(name);continue
         out.append((name,idxs))
+    if skipped:log('groups left out because they contain a video above WEIQI_MAX_IDX=%d: %s'%(MAXIDX,', '.join(skipped)))   # silent before
     return out
 def sgf_decision(path,sgf,force=False):
     """May sgf replace the file at path? Not when it is invalid or poorer than the file already there (fewer nodes, less AI data or notes). Returns (ok, reasons)."""
@@ -334,7 +338,7 @@ def stageB(name,idxs,visits=150,force=False,planned=None,dry=False):
     return done
 def run_pipeline(workers=2):
     G=groups()
-    dur={x['idx']:x['sec'] for x in IDX if x['season']==SEASON}
+    dur={x['idx']:x.get('sec',0) for x in IDX if x['season']==SEASON}   # a missing length must not stop the run
     gp=sorted(G,key=lambda g:(g[0]!='小目-小飞挂-二间高夹',-sum(dur[i] for i in g[1])))   # 总时长长的优先
     order=[i for _,ix in gp for i in ix]
     ready={};ev=threading.Condition();built={}
