@@ -1,10 +1,36 @@
-# License advice (a draft for discussion, not in effect) / 许可证建议(讨论稿,尚未生效)
+# License decision and background / 许可证决定与背景
 
-This is not legal advice. It collects public sources and gives general suggestions. For decisions about publishing, commercial licensing, or anything that touches the teacher's work, talk to a lawyer or the university's legal office. No LICENSE file has been added, so the repository is still "all rights reserved" by default. Sources were read on 2026-11-01. Where something could not be checked it says "not verified".
+This is not legal advice. It collects public sources and gives general suggestions. For decisions about publishing, commercial licensing, or anything that touches the teacher's work, talk to a lawyer or the university's legal office. The decision is written down first, and the comparison that led to it stays below as background. This pull request adds no LICENSE file (see the first point of the decision), so the repository is still "all rights reserved" by default. Sources were read on 2026-11-01. Where something could not be checked it says "not verified".
 
-这不是法律意见,只是整理了公开资料并给出一般性建议。涉及公开发布、商业授权,或者任何牵涉老师作品的决定,请咨询律师或学校法务。目前没有添加 LICENSE 文件,所以仓库默认仍是"保留所有权利"。资料读取于 2026-11-01;查不到的地方写作"未核实"。
+这不是法律意见,只是整理了公开资料并给出一般性建议。涉及公开发布、商业授权,或者任何牵涉老师作品的决定,请咨询律师或学校法务。文档先写决定,促成这个决定的对比分析留在下面作为背景。这个 PR 没有添加 LICENSE 文件(见决定的第一点),所以仓库默认仍是"保留所有权利"。资料读取于 2026-11-01;查不到的地方写作"未核实"。
 
-## 0. Short answer / 简短结论
+## Decision / 决定
+
+1. The license files are added in a separate pull request (branch `feature/license`, PR 5), not in this one. Until that one is merged the repository stays "all rights reserved".
+
+   许可证文件放在另一个 PR 里添加(分支 `feature/license`,PR 5),不在这个 PR 中。在那个 PR 合并之前,仓库仍然是"保留所有权利"。
+
+2. Code (`index.html`, `pipeline/`, `tools/`, `remote/` and the parts of `engine-config/` that we wrote) is under the PolyForm Strict License 1.0.0. It is stricter than PolyForm Noncommercial, which the comparison below recommended first: PolyForm Strict allows noncommercial use only, with no distribution and no changes. It was chosen because the goal is not only that others cannot profit, but also that nobody republishes the code or ships a modified copy. The permitted noncommercial uses (personal study, research, hobby projects, schools and universities, and similar) stay the same as in PolyForm Noncommercial ([source text](https://github.com/polyformproject/polyform-licenses/blob/1.0.0/PolyForm-Strict-1.0.0.md)).
+
+   代码(`index.html`、`pipeline/`、`tools/`、`remote/`,以及 `engine-config/` 里我们自己写的部分)采用 PolyForm Strict License 1.0.0。它比下面对比分析里最先推荐的 PolyForm Noncommercial 更严:PolyForm Strict 只允许非商业使用,不允许分发,也不允许修改。选它,是因为目标不只是别人不能靠它盈利,还包括没有人可以转发代码或者分发改过的版本。允许的非商业用途(个人学习、研究、业余爱好项目、学校和大学等)与 PolyForm Noncommercial 一样([原文](https://github.com/polyformproject/polyform-licenses/blob/1.0.0/PolyForm-Strict-1.0.0.md))。
+
+3. Our own data and docs (the SGF variation structure, the evaluation numbers, the README and `docs/`, without the teacher's commentary) are under CC BY-NC-ND 4.0. Anyone may copy and share them unchanged with credit, for noncommercial purposes only, and may not distribute adapted versions ([license summary](https://creativecommons.org/licenses/by-nc-nd/4.0/)).
+
+   我们自己的数据和文档(SGF 变化树结构、评估数值、README 和 `docs/`,不含老师的讲解)采用 CC BY-NC-ND 4.0。任何人都可以在署名的前提下原样复制和分享,但只限非商业目的,不得分发改编后的版本([许可证概要](https://creativecommons.org/licenses/by-nc-nd/4.0/))。
+
+4. The teacher's commentary is excluded from every license above and is being moved to a private repository. The public repository keeps the variation trees, the evaluations and the video links with time stamps.
+
+   老师的讲解文字不在上述任何许可证的范围内,正在迁移到私有仓库。公开仓库保留变化树、评估数据,以及带时间点的视频链接。
+
+5. Outside contributions come in under a DCO sign off (a `Signed-off-by` line on each commit), plus a sentence saying the maintainer may relicense contributions together with the project. The final wording is in `CONTRIBUTING.md`.
+
+   外部贡献通过 DCO 签署(每个提交带一行 `Signed-off-by`)接收,再加一句话:维护者可以把贡献连同项目一起重新授权。最终措辞见 `CONTRIBUTING.md`。
+
+A point to have checked: PolyForm Strict does not allow making changes, and a contributor has to change the code to prepare a pull request. The invitation in `CONTRIBUTING.md` to send pull requests, together with the contribution terms, is meant to give that permission, but whether the wording is enough is a question for a lawyer. Forking on GitHub stays possible whatever the license says, because the GitHub terms grant it, but a fork does not give anyone more rights than the license does.
+
+有一点需要请人把关:PolyForm Strict 不允许修改,而贡献者要准备 PR 就必须改代码。`CONTRIBUTING.md` 里邀请大家提交 PR 的话,加上贡献条款,本意就是给出这项许可,但这样的措辞够不够,要请律师判断。无论许可证怎么写,GitHub 上的 fork 仍然可以进行,因为 GitHub 的条款授予了这项权利,不过 fork 并不会让任何人获得比许可证更多的权利。
+
+## 0. Short answer (written before the decision, see above) / 简短结论(写于决定之前,见上文)
 
 1. The license can be changed later. A sole copyright holder can pick any terms for new versions, and copies already handed out stay under the terms they came with. There is no LICENSE file today, so nobody holds a grant yet, which makes this the easiest moment to choose.
 
@@ -152,6 +178,10 @@ Grey cases include a personal blog with ads, internal use by a company's staff, 
 
 ## 4. Recommendation / 推荐方案
 
+This was the recommendation before the decision. The decision at the top is stricter on two points: PolyForm Strict instead of PolyForm Noncommercial for the code, and CC BY-NC-ND instead of CC BY-NC-SA for data and docs. The rest of this section, including the advice on the teacher's commentary, still applies.
+
+这是做出决定之前的推荐。文首的决定在两点上更严:代码用 PolyForm Strict 而不是 PolyForm Noncommercial,数据和文档用 CC BY-NC-ND 而不是 CC BY-NC-SA。本节其余内容,包括关于老师讲解文字的建议,仍然适用。
+
 | Content / 内容 | License / 许可证 | Reason / 理由 |
 |---|---|---|
 | Code: `index.html`, `pipeline/`, `tools/`, `remote/`, the parts of `engine-config/` that we wrote / 代码:`index.html`、`pipeline/`、`tools/`、`remote/`,以及 `engine-config/` 里我们自己写的部分 | PolyForm Noncommercial 1.0.0 with a line `Required Notice: Copyright (c) 2026 Xtraordinaire9911` (use the GitHub name, not a real name or email) / PolyForm Noncommercial 1.0.0,附一行 `Required Notice: Copyright (c) 2026 Xtraordinaire9911`(用 GitHub 用户名,不用真名或邮箱) | Written for software, names personal study, research and education as allowed, so Go hobbyists are covered, and commercial users have to ask you / 专为软件起草,明确允许个人学习、研究和教育,围棋爱好者可以放心用,商业用户则必须来找你 |
@@ -270,21 +300,21 @@ Chinese copyright law protects oral works, and its fair use cases are limited to
 
 ## 7. Next steps (all yours, none done here) / 下一步(都由你决定,这里一项也没做)
 
-1. Decide on section 3.1 and section 4 (suggested: PolyForm Noncommercial for code, CC BY-NC-SA for data and docs, a separate notice for the teacher's text).
+1. Done: the license decision at the top of this page. What is left is merging the pull request that adds the LICENSE files.
 
-   决定 3.1 节和第 4 节的方案(建议:代码用 PolyForm Noncommercial,数据和文档用 CC BY-NC-SA,老师的文字单独声明)。
+   已完成:本页开头的许可证决定。剩下的是合并添加 LICENSE 文件的那个 PR。
 
 2. Add the teacher notice to the README and `NOTICE.md` first (section 4.1, point 1).
 
    先把老师内容的声明加进 README 和 `NOTICE.md`(4.1 节第 1 条)。
 
-3. Decide whether to contact Chen Lintao and whether to split off a private data repository.
+3. The move of the teacher's commentary to a private repository is decided. Whether to also ask Chen Lintao for permission is still open.
 
-   决定要不要联系陈林涛,以及要不要拆出一个私有的数据仓库。
+   把老师的讲解文字迁到私有仓库已经决定。要不要再向陈林涛请求授权,还没有定。
 
-4. Confirm the contribution terms in `CONTRIBUTING.md`, or replace them with a proper CLA, before merging an outside pull request.
+4. The contribution terms in `CONTRIBUTING.md` are now final wording. Have a lawyer read them before merging an outside pull request, especially the permission to modify the code.
 
-   合并外部 PR 之前,确认 `CONTRIBUTING.md` 里的贡献条款,或者换成正式的 CLA。
+   `CONTRIBUTING.md` 里的贡献条款现在是最终措辞。合并外部 PR 之前,请律师看一遍,尤其是修改代码的许可部分。
 
 5. Have a lawyer or the university legal office read the important decisions.
 
