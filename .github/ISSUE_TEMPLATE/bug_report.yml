@@ -1,0 +1,30 @@
+name: Bug report
+description: The viewer, the pipeline or a tool does not behave as expected
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Please do not paste tokens, keys or personal details. For a wrong variation, comment or evaluation use the content issue form instead.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened and what did you expect
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open index.html and pick ...
+        2. Press the right arrow until move N
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Browser and system
+      description: Also the viewer version and data time shown at the top left of the page.
+    validations:
+      required: true

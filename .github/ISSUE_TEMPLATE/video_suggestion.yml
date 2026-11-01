@@ -1,0 +1,20 @@
+name: Video suggestion
+description: Suggest a video series that could be added to the library
+title: "video: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: A link and a short reason are enough. Please do not attach video files or full transcripts.
+  - type: input
+    id: link
+    attributes:
+      label: Link to the video or playlist
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why it would be a good fit
+    validations:
+      required: true

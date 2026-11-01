@@ -1,0 +1,28 @@
+name: Content issue
+description: A wrong variation, a transcription mistake or a doubtful evaluation
+title: "content: "
+labels: ["data"]
+body:
+  - type: markdown
+    attributes:
+      value: The commentary comes from the teacher's videos and belongs to the original author. Please describe what is wrong instead of pasting long passages.
+  - type: input
+    id: group
+    attributes:
+      label: Group (SGF file name)
+    validations:
+      required: true
+  - type: input
+    id: where
+    attributes:
+      label: Where
+      description: Move number or variation path, or the time stamp in the comment.
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: What is wrong and what should it be
+      description: For evaluations, say which engine, network and number of visits you used.
+    validations:
+      required: true
