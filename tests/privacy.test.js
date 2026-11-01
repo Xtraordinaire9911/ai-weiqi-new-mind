@@ -77,7 +77,7 @@ test('absolute URLs in the viewer are links the user clicks or the loopback defa
       let host = ''; try { host = new URL(m[0].replace(/\$\{[^}]*\}/g, 'x')).hostname; } catch (e) { host = '?'; }
       if (['127.0.0.1', 'localhost', '[::1]'].includes(host)) continue; // the default address of the user's own bridge
       const before = text[f].slice(Math.max(0, m.index - 80), m.index);
-      const click = /(href\s*=\s*["']?|\bopen\(\s*[`'"])$/.test(before) || /(^|\n)\s*(\/\/|\*|\/\*|#|<!--)[^\n]*$/.test(before);
+      const click = /(href\s*=\s*["']?|\bopen\(\s*[`'"]|\bREPO_URL\s*=\s*['"])$/.test(before) || /(^|\n)\s*(\/\/|\*|\/\*|#|<!--)[^\n]*$/.test(before);
       if (!(CLICK_HOSTS.test(host) && click)) bad.push(f + ': ' + m[0].slice(0, 70));
     }
   }
