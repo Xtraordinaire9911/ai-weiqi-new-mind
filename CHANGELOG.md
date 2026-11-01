@@ -8,6 +8,10 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 ### 新增 / Added
 
+- 私有数据方案:`tools/sync_private_data.ps1` 把生成的数据复制到私有数据仓库的本地克隆并提交,`tools/strip_commentary.py` 生成去掉老师讲解文字的副本,`docs/PRIVATE-DATA.md` 记录流程、待决事项和流水线切换说明。没有改动任何公开数据。
+
+  Private data plan: `tools/sync_private_data.ps1` copies the generated data into the local clone of the private data repository and commits there, `tools/strip_commentary.py` makes a copy without the teacher commentary text, and `docs/PRIVATE-DATA.md` records the flow, the open decisions and the pipeline cutover notes. No public data is changed.
+
 - 分支模型:`main` 放已发布的版本,`develop` 做集成,另有 `feature/<topic>`、`fix/<topic>`、`data/<batch>`、`release/<version>` 和 `hotfix/<topic>`。步骤和命令见 `docs/WORKFLOW.md`。
 
   Branching model: `main` for released versions, `develop` for integration, `feature/<topic>`, `fix/<topic>`, `data/<batch>`, `release/<version>` and `hotfix/<topic>`. Steps and commands are in `docs/WORKFLOW.md`.
