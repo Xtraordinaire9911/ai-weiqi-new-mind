@@ -27,8 +27,9 @@ canvas{width:100%;max-width:min(80vh,100%);aspect-ratio:1;display:block;margin:a
 <main><canvas id="cv" width="800" height="800"></canvas>
 <div class="bar"><button id="b0">⏮</button><button id="b1">◀</button><button id="b2">▶</button><button id="b3">⏭</button><button id="bn">手数</button><button id="bf">视角:自动</button><button id="bl" style="display:none">演示征子</button><button id="ba">AI局部点</button><button id="bk">复制SGF</button></div>
 <div id="cap" style="display:none;margin:4px auto;max-width:min(80vh,100%);padding:3px 10px;border-radius:12px;background:rgba(255,140,0,.15);border:1px solid #e67e22;color:var(--ac);font-size:13px;text-align:center"></div><div id="info"></div><div id="path"></div></main>
-<section><h3 id="ti" style="margin-top:0"></h3><div id="vd"></div><h4>变化(↑↓选,→进入)</h4><div id="vars"></div><div id="cm"></div><div id="ep"></div></section>
-<script src="data/library.js"></script><script src="engine_core.js"></script><script src="engine_net.js"></script><script src="engine_panel.js"></script>
+<section><h3 id="ti" style="margin-top:0"></h3><div id="vd"></div><h4>变化(↑↓选,→进入)</h4><div id="vars"></div><div id="cm"></div></section>
+<script src="data/library.js"></script>
+<script src="engine_core.js"></script><script src="engine_net.js"></script><script src="engine_panel.js"></script>
 <script>
 // ---- SGF 解析: 节点 {p:{PROP:[vals]},c:[children],up} ----
 function parse(s){let i=0;
@@ -241,7 +242,7 @@ cv.onclick=e=>{const r=cv.getBoundingClientRect(),V=Vnow,span=Math.max(V.x1-V.x0
  const key=gtp([x,y]);document.querySelectorAll('.chip').forEach(c=>{const h=c.dataset.pv.split(' ').includes(key);c.classList.toggle('hot',h);if(h)c.scrollIntoView({block:'nearest'})});window.RC&&RC.click(x,y)}; // compute switch: trial move on an empty point
 const nav={b0:()=>go(tree),b1:()=>cur.up&&go(cur.up),b2:()=>cur.c[sel]&&go(cur.c[sel]),b3:()=>{let n=cur;while(n.c[0])n=n.c[0];go(n)}};
 for(const k in nav)$(k).onclick=nav[k];$('bn').onclick=()=>{showN=!showN;draw()};$('bf').onclick=()=>{viewMode=(viewMode+1)%3;draw()};$('bl').onclick=ladderDemo;$('ba').onclick=()=>{showAI=!showAI;draw()};$('bk').onclick=()=>navigator.clipboard.writeText(col.sgf);
-onkeydown=e=>{if(/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName))return;const k=e.key;if(k==='ArrowLeft')nav.b1();else if(k==='ArrowRight')nav.b2();else if(k==='ArrowUp'){sel=Math.max(0,sel-1);panel()}else if(k==='ArrowDown'){sel=Math.min(cur.c.length-1,sel+1);panel()}else if(k==='Home')nav.b0();else if(k==='End')nav.b3()};
+onkeydown=e=>{if(e.target.tagName==='INPUT')return;const k=e.key;if(k==='ArrowLeft')nav.b1();else if(k==='ArrowRight')nav.b2();else if(k==='ArrowUp'){sel=Math.max(0,sel-1);panel()}else if(k==='ArrowDown'){sel=Math.min(cur.c.length-1,sel+1);panel()}else if(k==='Home')nav.b0();else if(k==='End')nav.b3()};
 // ---- 库 ----
 function open_(c){col=c;tree=parse(c.sgf);view=bbox(tree);c.vb=((tree.p.PC||[''])[0].match(/BV\w+/g))||c.videos.map(v=>v.bvid);$('ti').textContent=c.name;$('vd').innerHTML=c.videos.map((v,i)=>`<div><a target="_blank" href="https://www.bilibili.com/video/${v.bvid}">▶ ${v.title}</a></div>`).join('');go(tree);document.querySelectorAll('#list div').forEach(d=>d.classList.toggle('on',d.dataset.id===c.id))}
 function renderList(){const q=$('q').value.trim(),s=$('src').value,box=$('list');box.innerHTML='';let ser='';
@@ -331,5 +332,4 @@ window.RC=(()=>{
    $('rcu').onchange=()=>{S.auto=$('rcu').checked;save()};$('rcc').onclick=test;$('rca').onclick=()=>analyze(cur,true);
    if(on())test()}}
 })();RC.init();
-window.EnginePanel&&EnginePanel.init({RC,cur:()=>cur,draw,fromGtp,getGhost:()=>ghost,setGhost:a=>{ghost=a;hot=[]},pinned:()=>ghost.length>0&&ghost===pinAI,hover:a=>{hoverG=a;drawBoard()},clearHover,chipClick:el=>$("cm").onclick({target:el})}); // engine panel (engine_panel.js): reuses the functions above, never copies them
 </script></body></html>

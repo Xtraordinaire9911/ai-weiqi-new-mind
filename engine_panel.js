@@ -250,6 +250,7 @@
   function build() {
     var css = document.createElement('style'); css.textContent = CSS; document.head.appendChild(css);
     box = $('ep');
+    if (!box) { box = document.createElement('div'); box.id = 'ep'; var cm = $('cm'); cm.parentNode.insertBefore(box, cm.nextSibling); } // the card goes right under the commentary cards; index.html has no markup for it
     box.innerHTML = '<div class="ep"><h5>KataGo 继续推演</h5><div class="ept" id="ept"></div><div class="eps"><i id="epd"></i><span id="epst"></span></div>' +
       '<div class="epr"><button id="epgo">开始</button><button id="eppa">暂停</button><button id="eprs">继续</button><button id="epsp">停止</button></div>' +
       '<div class="epg"><label>算力<select id="epm"><option value="off">缓存(不联网)</option><option value="local">本机</option><option value="remote">远程 GPU</option></select></label>' +
@@ -260,6 +261,8 @@
       '联网代码只在 engine_net.js,可自行审计,自动测试(tests/privacy.test.js)会检查这一点。</div>' +
       '<details id="epnet"><summary>网络活动(<span id="epnetc">0</span>)</summary><div class="epl" id="epnl"></div></details>' +
       '<div class="epn"><a href="docs/ENGINE-SETUP.md" target="_blank" rel="noopener">设置说明:本机 KataGo / 远程 GPU</a></div></div>';
+    // the viewer's arrow keys navigate the tree; while a select or a field of this card has the focus they belong to that control
+    box.addEventListener('keydown', function (e) { if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) e.stopPropagation(); });
     box.addEventListener('click', function (e) {
       var t = e.target;
       if (t.closest && t.closest('.chip') && t.dataset.pv) return H.chipClick(t);
@@ -297,7 +300,7 @@
 
   function init(host) {
     H = host;
-    if (!$('ep') || !C || !NET) return;
+    if (!C || !NET || !$('cm')) return;
     build();
     H.RC.on(function () { loadModels(); render(); });
     NET.subscribe(function () { if (netDirty) return; netDirty = true; setTimeout(function () { netDirty = false; if (box && $('epnetc')) { $('epnetc').textContent = String(NET.log.length); if ($('epnet').open) $('epnl').innerHTML = netRows(); } }, 400); });
@@ -309,4 +312,18 @@
   function onGo() { copied = ''; note = ''; dispatch({ t: 'navigate' }); }
 
   root.EnginePanel = { init: init, onGo: onGo };
+
+  // Self start once the page has run its own scripts. The viewer's top level bindings (cur, draw, ghost ...) are shared between classic scripts, so this adapter
+  // is the whole "hook": index.html itself only has the script tags and one call in go(). Everything is looked up when it is used, never copied.
+  function adapter() {
+    return {
+      RC: root.RC, cur: function () { return cur; }, draw: function () { draw(); }, fromGtp: function (t) { return fromGtp(t); },
+      getGhost: function () { return ghost; }, setGhost: function (a) { ghost = a; hot = []; }, pinned: function () { return ghost.length > 0 && ghost === pinAI; },
+      hover: function (a) { hoverG = a; drawBoard(); }, clearHover: function () { clearHover(); }, chipClick: function (el) { $('cm').onclick({ target: el }); }
+    };
+  }
+  function start() { if (typeof root.RC !== 'undefined' && typeof cur !== 'undefined') init(adapter()); }
+  if (typeof document !== 'undefined' && root.document) {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
+  }
 })(typeof self !== 'undefined' ? self : this);
