@@ -63,34 +63,32 @@ The common thread: **a stage wrote output that looked like a result without sayi
 Everything here was read only, on copies in a scratch folder or on frames decoded with ffmpeg.
 
 * 用缓存文件的副本对四个已生成的分组运行 `stageB` 做了彩排：生成的 SGF 与已发布的完全一致，只有两点不同，零星的 U+FFFD 字符消失了，隐争/隐真这条规则链现在有两处以"引征"结尾。节点数、AI 节点数和要点数都相同。
-* 分数视角检测器能标出全部四个旧的黑方视角 `a.json` 文件，并接受真实的 `a2.json`。
-* 对 30 个已下载视频各取 2 帧做棋盘自检：网格得分 46 到 91（门槛 20）；错误版式得分 0 到 2。在 480 个真实画面上的识别结果与旧的 `b.json` 完全一致。用一段 20 秒的真实片段做了端到端运行，结果正常；重新编码成 1280x720 和灰度的版本都被正确拒绝，并给出了正确原因。
-* 错别字词典在 14784 条真实文本（转写和要点）上：有 7 条与旧输出不同（就是那条只改了一半的规则链），再处理一遍后 0 条变化（旧代码是 8 条）。
-* `sgfcheck` 接受所有有内容的 SGF；`build.ps1` 生成的 90 个占位文件校验不通过（第 10 行）。
-
 * Dress rehearsal of the four generated groups with `stageB` on copies of the cached files: the SGFs come out identical to the shipped ones except that stray U+FFFD characters are gone and the 隐争/隐真 rule chain now ends in 引征 in two places. Node counts, AI nodes and notes are equal.
+* 分数视角检测器能标出全部四个旧的黑方视角 `a.json` 文件，并接受真实的 `a2.json`。
 * The score perspective detector flags all four old Black-perspective `a.json` files and accepts the real `a2.json`.
+* 对 30 个已下载视频各取 2 帧做棋盘自检：网格得分 46 到 91（门槛 20）；错误版式得分 0 到 2。在 480 个真实画面上的识别结果与旧的 `b.json` 完全一致。用一段 20 秒的真实片段做了端到端运行，结果正常；重新编码成 1280x720 和灰度的版本都被正确拒绝，并给出了正确原因。
 * Board self check on 2 frames from each of the 30 downloaded videos: grid score 46 to 91 (limit 20); wrong layouts 0 to 2. Recognition on 480 real frames is identical to the old `b.json`. End to end on a real 20 second clip works; a 1280x720 re-encode and a greyscale re-encode are rejected with the right reason.
+* 错别字词典在 14784 条真实文本（转写和要点）上：有 7 条与旧输出不同（就是那条只改了一半的规则链），再处理一遍后 0 条变化（旧代码是 8 条）。
 * Typo dictionary on 14784 real texts (transcripts and notes): 7 differ from the old output (the half done chain), 0 change on a second pass (8 did with the old code).
+* `sgfcheck` 接受所有有内容的 SGF；`build.ps1` 生成的 90 个占位文件校验不通过（第 10 行）。
 * `sgfcheck` accepts every SGF that has content; the 90 `build.ps1` placeholders fail (row 10).
 
 ## 4. 采用加固后的文件（建议顺序） / Adopting the hardened files (recommended order)
 
-1. 先让正在运行的流水线处理完当前分组（`logs/orch2.log` 或旧日志里出现 `B done` 一行），或者接受正在进行的分析丢失：旧的 `analyze2.py` 不能断点续跑。
-2. 备份 `D:\tmp\work\*.py`，然后把本分支 `pipeline/*.py` 全部拷进 `D:\tmp\work`（新模块：`wqutil.py treesync.py sgfcheck.py fixtext.py wq.py`，它们必须和 `orch2.py` 放在同一目录）。保留你现有的 `fixdict.json`。
-3. 把 `PYTHONUTF8=1` 设为用户环境变量。
-4. 运行 `python wq.py fix-check D:\tmp\work\fixdict.json` 和 `python regen.py --dry-run`。试运行会逐个分组打印"会写入"还是"会拒绝"，不会写任何文件。
-5. 对现有的四个分组依次运行 `python wq.py check "<分组>"` 和 `python wq.py stamp "<分组>"`，给它们的 a2.json 和 kp 文件补上指纹。不补也能用，但会被标为"legacy"并给出警告。
-6. 照常启动 orch2，用 `python wq.py status` 观察。
-7. 在第 2 步完成之前，不要运行 `tools/sync_pipeline.ps1`（第 5 行）。
-
-1. Let the running pipeline finish the current group (a `B done` line in `logs/orch2.log` or the old log), or accept losing the running analysis: the old `analyze2.py` cannot resume.
-2. Back up `D:\tmp\work\*.py`, then copy all of `pipeline/*.py` from this branch into `D:\tmp\work` (new modules: `wqutil.py treesync.py sgfcheck.py fixtext.py wq.py`; they must sit next to `orch2.py`). Keep your `fixdict.json`.
-3. Set `PYTHONUTF8=1` as a user environment variable.
-4. `python wq.py fix-check D:\tmp\work\fixdict.json` and `python regen.py --dry-run`. The dry run prints for every group whether it would write or refuse; nothing is written.
-5. For the four existing groups run `python wq.py check "<group>"` and then `python wq.py stamp "<group>"`, so that their a2.json and kp files get a fingerprint. Without it they still work but are marked "legacy" with a warning.
-6. Start orch2 as before. Watch with `python wq.py status`.
-7. Do not run `tools/sync_pipeline.ps1` before step 2 (row 5).
+* 第 1 步：先让正在运行的流水线处理完当前分组（`logs/orch2.log` 或旧日志里出现 `B done` 一行），或者接受正在进行的分析丢失：旧的 `analyze2.py` 不能断点续跑。
+* Step 1: Let the running pipeline finish the current group (a `B done` line in `logs/orch2.log` or the old log), or accept losing the running analysis: the old `analyze2.py` cannot resume.
+* 第 2 步：备份 `D:\tmp\work\*.py`，然后把本分支 `pipeline/*.py` 全部拷进 `D:\tmp\work`（新模块：`wqutil.py treesync.py sgfcheck.py fixtext.py wq.py`，它们必须和 `orch2.py` 放在同一目录）。保留你现有的 `fixdict.json`。
+* Step 2: Back up `D:\tmp\work\*.py`, then copy all of `pipeline/*.py` from this branch into `D:\tmp\work` (new modules: `wqutil.py treesync.py sgfcheck.py fixtext.py wq.py`; they must sit next to `orch2.py`). Keep your `fixdict.json`.
+* 第 3 步：把 `PYTHONUTF8=1` 设为用户环境变量。
+* Step 3: Set `PYTHONUTF8=1` as a user environment variable.
+* 第 4 步：运行 `python wq.py fix-check D:\tmp\work\fixdict.json` 和 `python regen.py --dry-run`。试运行会逐个分组打印"会写入"还是"会拒绝"，不会写任何文件。
+* Step 4: `python wq.py fix-check D:\tmp\work\fixdict.json` and `python regen.py --dry-run`. The dry run prints for every group whether it would write or refuse; nothing is written.
+* 第 5 步：对现有的四个分组依次运行 `python wq.py check "<分组>"` 和 `python wq.py stamp "<分组>"`，给它们的 a2.json 和 kp 文件补上指纹。不补也能用，但会被标为"legacy"并给出警告。
+* Step 5: For the four existing groups run `python wq.py check "<group>"` and then `python wq.py stamp "<group>"`, so that their a2.json and kp files get a fingerprint. Without it they still work but are marked "legacy" with a warning.
+* 第 6 步：照常启动 orch2，用 `python wq.py status` 观察。
+* Step 6: Start orch2 as before. Watch with `python wq.py status`.
+* 第 7 步：在第 2 步完成之前，不要运行 `tools/sync_pipeline.ps1`（第 5 行）。
+* Step 7: Do not run `tools/sync_pipeline.ps1` before step 2 (row 5).
 
 ## 5. 命令与设置 / Commands and settings
 
@@ -113,11 +111,10 @@ New files in the work dir: `logs/orch2.log`, `logs/analyze_<group>.log`, `failed
 ## 6. 尚未验证 / Not verified
 
 * 没有真实运行过 KataGo：启动时的让子局面检测（查询里的 `initialPlayer`）、请求窗口和检查点，都只在 `tests/fake_katago.py` 上跑过。
-* 没有真实运行过 yt-dlp 或 whisper：重试、超时和拒绝这几条路径用的是模拟对象；`board.py` 则在真实片段上跑过。
-* PowerShell 脚本只读过，没有运行过，本分支也没有改动它们。
-* 没有改动查看器。它只读取 SGF；`C[]` 里的 LF 换行应该没有问题，因为它用 `white-space: pre-wrap` 显示评论，但没有在浏览器里实际试过。
-
 * A real KataGo run: the startup handicap check (`initialPlayer` in the query), the request window and the checkpoints were only exercised against `tests/fake_katago.py`.
+* 没有真实运行过 yt-dlp 或 whisper：重试、超时和拒绝这几条路径用的是模拟对象；`board.py` 则在真实片段上跑过。
 * A real yt-dlp or whisper run: the retry, timeout and rejection paths use fakes; `board.py` was run on real clips.
+* PowerShell 脚本只读过，没有运行过，本分支也没有改动它们。
 * PowerShell scripts were read, not run, and not changed on this branch.
+* 没有改动查看器。它只读取 SGF；`C[]` 里的 LF 换行应该没有问题，因为它用 `white-space: pre-wrap` 显示评论，但没有在浏览器里实际试过。
 * The viewer was not touched. It only reads the SGFs; LF line endings in `C[]` should be fine because it shows comments with `white-space: pre-wrap`, but that was not tried in a browser.
