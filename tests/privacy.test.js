@@ -10,6 +10,11 @@ const path = require('node:path');
 
 const root = path.join(__dirname, '..');
 const NET_FILE = 'engine_net.js'; // the one engine client module
+// The mobile edition adds exactly two more places, each allowed only what it needs and checked by the tests further down:
+//   sw.js  the service worker: same-origin cache handling, so it may call fetch() and mention caches (one fetch call, guarded by an origin check)
+//   pwa.js registers sw.js from the same folder, nothing else; it may name navigator.serviceWorker but has no network call at all
+const SW_FILE = 'sw.js', PWA_FILE = 'pwa.js';
+const ALLOW = { [SW_FILE]: new Set(['fetch()']), [PWA_FILE]: new Set(['navigator device or network API', 'service worker']) };
 const SKIP_DIRS = new Set(['.git', 'node_modules', 'tests', 'tools', 'pipeline', 'remote', 'docs', 'engine-config']);
 const EXT = new Set(['.js', '.mjs', '.html', '.htm', '.css']);
 
@@ -48,11 +53,13 @@ test('the scan sees the viewer files (index.html, the engine files, the library)
 
 test('no network API or hidden loading outside engine_net.js', () => {
   const hits = [];
-  for (const f of others) for (const [re, what] of BANNED) { const m = re.exec(text[f]); if (m) hits.push(f + ': ' + what + ' (' + m[0].slice(0, 40).replace(/\s+/g, ' ') + ')'); }
+  for (const f of others) for (const [re, what] of BANNED) { const m = re.exec(text[f]); if (m && !(ALLOW[f] && ALLOW[f].has(what))) hits.push(f + ': ' + what + ' (' + m[0].slice(0, 40).replace(/\s+/g, ' ') + ')'); }
   assert.deepEqual(hits, [], 'network code must live in ' + NET_FILE + ' only');
 });
 
-test('engine_net.js is the only file with fetch, and it has exactly one fetch call', () => {
+test('the scan sees the mobile files too', () => { for (const f of ['mobile.js', SW_FILE, PWA_FILE]) assert.ok(files.includes(f), f + ' is not scanned'); });
+
+test('engine_net.js and sw.js are the only files with fetch, and each has exactly one fetch call', () => {
   const calls = (text[NET_FILE].match(/\bfetch\s*\(/g) || []).length;
   assert.equal(calls, 1, 'one fetch call: the single engine client function');
   for (const bad of ['XMLHttpRequest', 'WebSocket', 'EventSource', 'sendBeacon', 'importScripts']) assert.ok(!text[NET_FILE].includes(bad), NET_FILE + ' uses ' + bad);
@@ -111,4 +118,32 @@ test('the panel tells the user the privacy facts that the code backs up', () => 
   const p = text['engine_panel.js'];
   for (const w of ['不含统计', 'cookie', 'localStorage', 'Authorization', 'engine_net.js', 'tests/privacy.test.js', '作者收不到任何数据']) assert.ok(p.includes(w), 'privacy statement lacks: ' + w);
   assert.ok(fs.existsSync(path.join(root, 'tests/privacy.test.js')), 'the test named in the statement exists');
+});
+
+test('sw.js only handles same-origin requests: origin check first, one fetch, no absolute URL, no other network API', () => {
+  const s = text[SW_FILE];
+  assert.equal((s.match(/\bfetch\s*\(/g) || []).length, 1, 'one fetch call');
+  const guard = s.search(/url\.origin\s*!==\s*self\.location\.origin\)\s*return/), resp = s.search(/respondWith\s*\(/);
+  assert.ok(guard >= 0 && resp > guard, 'cross-origin requests return before respondWith');
+  assert.ok(!/\b(?:https?|wss?):\/\//.test(s), 'no absolute URL in sw.js');
+  for (const bad of ['XMLHttpRequest', 'WebSocket', 'EventSource', 'sendBeacon', 'importScripts', 'indexedDB', 'openWindow', 'Notification', 'PushManager', 'sync.register']) assert.ok(!s.includes(bad), SW_FILE + ' uses ' + bad);
+  assert.match(s, /req\.method\s*!==\s*'GET'\)\s*return/, 'only GET is handled');
+});
+
+test('pwa.js has no network call and registers only the same-folder sw.js', () => {
+  const s = text[PWA_FILE];
+  for (const bad of ['fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource', 'sendBeacon', 'importScripts']) assert.ok(!s.includes(bad), PWA_FILE + ' uses ' + bad);
+  const regs = [...s.matchAll(/\.register\(([^)]*)\)/g)].map(m => m[1].trim());
+  assert.deepEqual(regs, ["'sw.js'"], 'the one register call names sw.js with no path or URL');
+});
+
+test('the cache name follows the visible interface version and the shell list only names files that exist', () => {
+  const ver = /VIEWER_VER\s*=\s*'([^']+)'/.exec(text['index.html'])[1], sv = /const VER = '([^']+)'/.exec(text[SW_FILE])[1];
+  assert.equal(sv, ver, 'bump VER in sw.js together with VIEWER_VER in index.html');
+  assert.match(text[SW_FILE], /'joseki-shell-v' \+ VER/);
+  const shell = /const SHELL = \[([\s\S]*?)\];/.exec(text[SW_FILE])[1];
+  for (const f of [...shell.matchAll(/'([^']+)'/g)].map(m => m[1]).filter(f => f !== './')) assert.ok(fs.existsSync(path.join(root, f)), 'sw.js lists a missing file: ' + f);
+  assert.ok(fs.existsSync(path.join(root, 'manifest.webmanifest')));
+  const mf = JSON.parse(fs.readFileSync(path.join(root, 'manifest.webmanifest'), 'utf8'));
+  for (const i of mf.icons) assert.ok(fs.existsSync(path.join(root, i.src)), 'manifest icon missing: ' + i.src);
 });

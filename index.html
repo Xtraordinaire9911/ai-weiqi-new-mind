@@ -1,4 +1,7 @@
-<!doctype html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<!doctype html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#f6f3ec" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#1c1b19" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="定式库"><meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest"><link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <title>定式库</title>
 <style>
 :root{--bg:#f6f3ec;--fg:#222;--pn:#fff;--ac:#b5651d;--bd:#d8d2c4;--gd:#2e8b57;--rd:#c0392b;--mu:#777}
@@ -24,7 +27,7 @@ canvas{width:100%;max-width:min(80vh,100%);aspect-ratio:1;display:block;margin:a
 /* credit footer: a slim bar under the three columns, so it never overlaps the sticky compute row at the bottom of the sidebar */
 footer{grid-column:1/-1;padding:3px 10px;border-top:1px solid var(--bd);background:var(--pn);color:var(--mu);font-size:11px;line-height:1.5;text-align:center}footer a{color:var(--ac);text-decoration:none}footer a:hover{text-decoration:underline}
 @media(min-width:981px){body{grid-template-rows:minmax(0,1fr) auto}}
-</style></head><body>
+</style><script src="mobile.js"></script></head><body>
 <aside><select id="src"></select> <input id="q" placeholder="搜索 夹/挂/三三…" style="width:100%;margin:6px 0"><div id="ver" style="font-size:11px;color:var(--mu);margin:2px 0"></div><div id="prog" style="background:#fff3cd;color:#664d03;border:1px solid #e0b84a;border-radius:5px;padding:6px 8px;margin:6px 0;font-size:13px;display:none"></div><div id="list"></div>
 <details id="rc"><summary><i id="rcd"></i>算力 · <span id="rcs">缓存</span></summary><div class="rcb"><select id="rcm" title="缓存=使用已生成的 AI 数据(默认,不联网)"><option value="off">缓存(默认,不联网)</option><option value="local">本机引擎</option><option value="remote">远程 GPU</option></select><input id="rce" type="text" placeholder="桥接地址 http://127.0.0.1:8787" autocomplete="off" spellcheck="false"><input id="rct" type="password" placeholder="token(只存在本浏览器)" autocomplete="off"><div class="rcr"><button id="rcc">测试连接</button><button id="rca">分析当前局面</button></div><label><input type="checkbox" id="rcu"> 无缓存时自动分析</label><div id="rcn"></div></div></details></aside>
 <main><canvas id="cv" width="800" height="800"></canvas>
@@ -34,7 +37,7 @@ footer{grid-column:1/-1;padding:3px 10px;border-top:1px solid var(--bd);backgrou
 <!-- Credit line: the licenses make credit a condition of reuse, so it stays visible on every page. Keep it when you copy or adapt this viewer. -->
 <footer id="cr"><a href="https://github.com/Xtraordinaire9911/ai-weiqi-new-mind" target="_blank" rel="noopener noreferrer">ai-weiqi-new-mind</a> · 代码 <a href="https://polyformproject.org/licenses/noncommercial/1.0.0" target="_blank" rel="noopener noreferrer">PolyForm Noncommercial 1.0.0</a> · 数据与文档 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noopener noreferrer">CC BY-NC-SA 4.0</a> · 讲解文字版权归陈林涛 · <a href="https://github.com/Xtraordinaire9911/ai-weiqi-new-mind/blob/main/NOTICE.md" target="_blank" rel="noopener noreferrer">署名与许可说明</a></footer>
 <script src="data/library.js"></script>
-<script src="engine_core.js"></script><script src="engine_net.js"></script><script src="engine_panel.js"></script>
+<script src="engine_core.js"></script><script src="engine_net.js"></script><script src="engine_panel.js"></script><script src="pwa.js"></script>
 <script>
 // ---- SGF 解析: 节点 {p:{PROP:[vals]},c:[children],up} ----
 function parse(s){let i=0;
@@ -248,7 +251,7 @@ cv.onclick=e=>{const r=cv.getBoundingClientRect(),V=Vnow,span=Math.max(V.x1-V.x0
  const key=gtp([x,y]);document.querySelectorAll('.chip').forEach(c=>{const h=c.dataset.pv.split(' ').includes(key);c.classList.toggle('hot',h);if(h)c.scrollIntoView({block:'nearest'})});window.RC&&RC.click(x,y)}; // compute switch: trial move on an empty point
 // ---- Credit properties for "copy SGF" ----
 // The licenses make credit a condition of reuse, so a copied game record carries it too. AP, CP and SO are added to the root node, but only the ones the file does not have yet. The stored SGF text is never changed, only the copy.
-const VIEWER_VER='4.6',REPO_URL='https://github.com/Xtraordinaire9911/ai-weiqi-new-mind';
+const VIEWER_VER='4.7',REPO_URL='https://github.com/Xtraordinaire9911/ai-weiqi-new-mind';
 const CREDIT_CP='Based on ai-weiqi-new-mind by Xtraordinaire9911 ('+REPO_URL+'), licensed under PolyForm Noncommercial 1.0.0 (code) and CC BY-NC-SA 4.0 (data and docs). The teacher commentary text belongs to 陈林涛 and is not covered by these licenses.';
 const sgfEsc=v=>v.replace(/[\]\\]/g,'\\$&'); // inside a property value, ] and \ must be escaped
 function withCredit(sgf){
