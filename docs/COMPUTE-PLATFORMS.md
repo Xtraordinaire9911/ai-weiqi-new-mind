@@ -125,7 +125,7 @@ Principle: only facts you can see yourself after logging in. Do not pass on pass
 
 What these answers decide: which KataGo build to use (a T4 and a P100 differ in CUDA capability), the `--batch` and thread values, how many groups fit in one session, and whether several "Save & Run All" rounds are needed.
 
-### 3.3 Colab
+### 3.3 Colab 笔记本 / Colab notebooks
 
 1. 用你自己的 Google 账号打开 colab.research.google.com,上传 `remote/katago_batch.ipynb`。
 
@@ -355,14 +355,21 @@ Note whether you have an LRZ account, whether you were added to a project with A
 
 ## 来源(2026-11-01 访问) / Sources (visited 2026-11-01)
 
-- Colab FAQ: https://research.google.com/colaboratory/faq.html. Third party price roundup / 第三方价格汇总: https://gpuperhour.com/blog/google-colab-alternatives
-- Kaggle: https://www.kaggle.com/docs/notebooks (rendered in the browser, the body text could not be read / 由浏览器渲染,没能读到正文). Third party roundup / 第三方汇总: https://gpuperhour.com/blog/free-cloud-gpus-and-credits
+- Colab FAQ: https://research.google.com/colaboratory/faq.html; 第三方价格汇总 / Third party price roundup: https://gpuperhour.com/blog/google-colab-alternatives
+- Kaggle: https://www.kaggle.com/docs/notebooks (由浏览器渲染,没能读到正文 / rendered in the browser, the body text could not be read)
+- 第三方汇总 / Third party roundup: https://gpuperhour.com/blog/free-cloud-gpus-and-credits
 - Hugging Face Jobs: https://huggingface.co/docs/huggingface_hub/guides/jobs. Spaces GPUs: https://huggingface.co/docs/hub/spaces-gpus
 - RunPod: https://www.runpod.io/pricing. Vast.ai: https://vast.ai/pricing. Modal: https://modal.com/pricing. Lightning AI: https://lightning.ai/pricing
 - Paperspace: https://docs.digitalocean.com/products/paperspace/pricing
-- Google Cloud free trial and GPU quota (community report) / Google Cloud 免费试用与 GPU 配额(社区反馈): https://discuss.google.dev/t/300-free-trial-is-useless-without-gpu-quota-my-trial-period-is-wasting-away/290091. AWS free plan / AWS 免费计划: https://aws.amazon.com/about-aws/whats-new/2025/07/aws-free-tier-credits-month-free-plan/. Azure student GPU quota / Azure 学生 GPU 配额: https://learn.microsoft.com/en-us/answers/questions/2157302/clarification-on-gpu-access-after-upgrading-azure
-- GitHub Student Developer Pack: https://education.github.com/pack. Eligibility / 资格: https://docs.github.com/en/education/about-github-education/github-education-for-students/about-github-education-for-students
-- LRZ AI Systems: https://doku.lrz.de/ai-systems-11484278.html, access / 申请 https://doku.lrz.de/1-access-10746642.html, resources and partitions / 资源与分区 https://doku.lrz.de/1-general-description-and-resources-10746641.html, compute https://doku.lrz.de/2-compute-10746641.html
+- Google Cloud 免费试用与 GPU 配额(社区反馈) / Google Cloud free trial and GPU quota (community report): https://discuss.google.dev/t/300-free-trial-is-useless-without-gpu-quota-my-trial-period-is-wasting-away/290091
+- AWS 免费计划 / AWS free plan: https://aws.amazon.com/about-aws/whats-new/2025/07/aws-free-tier-credits-month-free-plan/
+- Azure 学生 GPU 配额 / Azure student GPU quota: https://learn.microsoft.com/en-us/answers/questions/2157302/clarification-on-gpu-access-after-upgrading-azure
+- GitHub Student Developer Pack: https://education.github.com/pack; 资格 / Eligibility: https://docs.github.com/en/education/about-github-education/github-education-for-students/about-github-education-for-students
+- LRZ AI Systems: https://doku.lrz.de/ai-systems-11484278.html
+- 申请 / access: https://doku.lrz.de/1-access-10746642.html
+- 资源与分区 / resources and partitions: https://doku.lrz.de/1-general-description-and-resources-10746641.html
+- 算力 / compute: https://doku.lrz.de/2-compute-10746641.html
 - BayernKI and NHR@FAU: https://hpc.fau.de/application-for-bayernki-access and https://doc.nhr.fau.de/bayernki-application/
-- KataGo network license / KataGo 网络许可证: https://katagotraining.org/network_license/. The KataGo release notes (transformer, CUDA) are in the source list of `remote/README.md` / KataGo 的发布说明(Transformer、CUDA)见 `remote/README.md` 的来源列表
-- Community speed data point (old, different network) / 社区速度数据点(较旧,网络不同): https://www.lifein19x19.com/viewtopic.php?p=278149
+- KataGo 网络许可证 / KataGo network license: https://katagotraining.org/network_license/
+- KataGo 的发布说明(Transformer、CUDA)见 `remote/README.md` 的来源列表 / The KataGo release notes (transformer, CUDA) are in the source list of `remote/README.md`
+- 社区速度数据点(较旧,网络不同) / Community speed data point (old, different network): https://www.lifein19x19.com/viewtopic.php?p=278149

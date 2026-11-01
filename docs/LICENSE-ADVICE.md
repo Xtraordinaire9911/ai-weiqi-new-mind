@@ -114,7 +114,7 @@ Yes. The rules in practice:
 | Business Source License 1.1 | 部分满足:生产使用需要商业许可,但到期后自动转成开源 / Partly: production use needs a commercial license, but it turns into open source on a set date | 服务器软件的商业保护 / Commercial protection for server software | 否 / No | 最多四年后别人就能合法商用,与目标相反 / After at most four years others may use it commercially, which is the opposite of the goal |
 | 自拟"源码可见,商用请联系我"(双重授权) / Custom "source visible, ask for a commercial license" (dual licensing) | 取决于条款写得怎样 / Depends on the wording | 想完全自己掌控 / Complete control | 否 / No | 自己写条款容易留漏洞,没有律师不建议 / Writing your own terms invites loopholes, so avoid it without a lawyer |
 
-### 3.1 PolyForm Noncommercial 1.0.0
+### 3.1 PolyForm Noncommercial 1.0.0 许可 / PolyForm Noncommercial 1.0.0 license
 
 它授予为非商业目的使用、修改和分发软件的权利。条文明确列出了允许的情形:为增进公共知识而做的研究、实验和测试,个人学习,私人娱乐,业余爱好项目,以及慈善组织、学校和大学、公共研究机构、公共安全与卫生机构、环保组织和政府机构的使用,不论其资金来源([SPDX 页面](https://spdx.org/licenses/PolyForm-Noncommercial-1.0.0.html)、[原文](https://github.com/polyformproject/polyform-licenses/blob/1.0.0/PolyForm-Noncommercial-1.0.0.md))。它含有专利许可;要求转交副本的人附上条款(或其网址)以及你提供的 `Required Notice:` 行;被书面告知违约的被许可人,在 32 天内改正即可恢复授权;不允许再许可或转让。它是专为软件起草的,有 SPDX 标识 `PolyForm-Noncommercial-1.0.0`。商业用户需要另外来找你签协议,这就是双重授权的部分。
 
@@ -138,7 +138,7 @@ The grey area of "non-commercial" is real:
 
   United States: in Great Minds v. FedEx Office (Second Circuit, 2018) a copy shop copying course materials for school districts did not breach the NC term, because the licensed school districts were the ones exercising the rights ([CC legal database](https://legaldb.creativecommons.org/en/cases/15/)).
 
-### 3.3 Business Source License 1.1
+### 3.3 Business Source License 1.1 许可 / Business Source License 1.1 license
 
 源码公开,非生产使用免费,生产使用需要商业许可,除非"附加使用授权"允许。到了转换日期(最晚为首次公开发布后四年),许可证会自动转成与 GPL v2 或更高版本兼容的开源许可证。MariaDB 自己的 FAQ 也说 BSL 不是开源许可证([MariaDB BSL FAQ](https://mariadb.com/bsl-faq-adopting/))。转换之后别人可以合法商用,与你的目标冲突;而且它本来是为保护服务器软件不被商业对手抢走而设计的,对一份离线学习资料来说,"生产使用"没有明确含义。不推荐。
 
@@ -368,16 +368,17 @@ Chinese copyright law protects oral works, and its fair use cases are limited to
 
 ## 来源(2026-11-01 访问) / Sources (visited 2026-11-01)
 
-- choosealicense, the default without a license / 无许可证时的默认状态: https://choosealicense.com/no-permission/
-- GitHub terms of service (D.5 view and fork, D.6 contributions under the repository license) / GitHub 服务条款(D.5 查看与 fork,D.6 贡献按仓库许可证授权): https://docs.github.com/en/site-policy/github-terms/github-terms-of-service
+- 无许可证时的默认状态 / choosealicense, the default without a license: https://choosealicense.com/no-permission/
+- GitHub 服务条款(D.5 查看与 fork,D.6 贡献按仓库许可证授权) / GitHub terms of service (D.5 view and fork, D.6 contributions under the repository license): https://docs.github.com/en/site-policy/github-terms/github-terms-of-service
 - PolyForm Noncommercial 1.0.0: https://spdx.org/licenses/PolyForm-Noncommercial-1.0.0.html and https://github.com/polyformproject/polyform-licenses/blob/1.0.0/PolyForm-Noncommercial-1.0.0.md
-- Creative Commons FAQ (software, irrevocability, dual licensing, database rights) / CC 常见问题(软件、不可撤销、双重授权、数据库权): https://creativecommons.org/faq/
-- Open Source Definition / 开源定义: https://opensource.org/osd
+- CC 常见问题(软件、不可撤销、双重授权、数据库权) / Creative Commons FAQ (software, irrevocability, dual licensing, database rights): https://creativecommons.org/faq/
+- 开源定义 / Open Source Definition: https://opensource.org/osd
 - BSL 1.1 FAQ: https://mariadb.com/bsl-faq-adopting/
-- DCO and CLA / DCO 与 CLA: https://opensource.com/article/18/3/cla-vs-dco-whats-difference, https://writing.kemitchell.com/2021/07/02/DCO-Not-CLA, DCO text https://developercertificate.org/
-- German NC case law / 德国关于 NC 条款的判例: https://www.lhr-law.de/en/magazine-en/cologne-higher-regional-court-confirms-use-of-photographs-by-deutschlandradio-in-breach-of-cc-licence-but-not-for-commercial-use/ and https://netzpolitik.org/2014/der-dritte-streich-olg-koeln-zu-deutschlandradios-nutzung-cc-lizenzierter-fotos-mit-nc-modul/
+- DCO 与 CLA / DCO and CLA: https://opensource.com/article/18/3/cla-vs-dco-whats-difference, https://writing.kemitchell.com/2021/07/02/DCO-Not-CLA, DCO text https://developercertificate.org/
+- 德国关于 NC 条款的判例 / German NC case law: https://www.lhr-law.de/en/magazine-en/cologne-higher-regional-court-confirms-use-of-photographs-by-deutschlandradio-in-breach-of-cc-licence-but-not-for-commercial-use/ and https://netzpolitik.org/2014/der-dritte-streich-olg-koeln-zu-deutschlandradios-nutzung-cc-lizenzierter-fotos-mit-nc-modul/
 - Great Minds v. FedEx Office: https://legaldb.creativecommons.org/en/cases/15/
-- Chinese Copyright Law (2020 amendment) / 中国《著作权法》(2020 年修正): http://www.npc.gov.cn/npc/c30834/202011/848e73f58d4e4c5b82f69d25d46048c6.shtml and https://www.ncac.gov.cn/xxfb/flfg/flfg_532/202103/t20210309_50530.html
-- German UrhG sections 51, 53, 60d / 德国著作权法第 51、53、60d 条: https://www.gesetze-im-internet.de/urhg/__51.html, https://www.gesetze-im-internet.de/urhg/__53.html, https://www.gesetze-im-internet.de/urhg/__60d.html. Commentary on section 44b / 第 44b 条评述: https://cms.law/de/deu/legal-updates/text-und-data-mining-nach-dem-neuen-urheberrecht
+- 中国《著作权法》(2020 年修正) / Chinese Copyright Law (2020 amendment): http://www.npc.gov.cn/npc/c30834/202011/848e73f58d4e4c5b82f69d25d46048c6.shtml and https://www.ncac.gov.cn/xxfb/flfg/flfg_532/202103/t20210309_50530.html
+- 德国著作权法第 51、53、60d 条 / German UrhG sections 51, 53, 60d: https://www.gesetze-im-internet.de/urhg/__51.html, https://www.gesetze-im-internet.de/urhg/__53.html, https://www.gesetze-im-internet.de/urhg/__60d.html
+- 第 44b 条评述 / Commentary on section 44b: https://cms.law/de/deu/legal-updates/text-und-data-mining-nach-dem-neuen-urheberrecht
 - KataGo: https://github.com/lightvector/KataGo/blob/master/LICENSE and https://katagotraining.org/network_license/
 - yt-dlp https://github.com/yt-dlp/yt-dlp, faster-whisper https://github.com/SYSTRAN/faster-whisper, Whisper https://github.com/openai/whisper, numpy https://numpy.org/doc/stable/license.html

@@ -342,14 +342,14 @@ gh label create remote   --color FBCA04 --description "Remote GPU and cloud note
 
 ## 来源(2026-11-01 访问) / Sources (visited 2026-11-01)
 
-- Conventional Commits 1.0.0 / 约定式提交规范: https://www.conventionalcommits.org/en/v1.0.0/
-- Keep a Changelog 1.1.0 / 更新日志格式: https://keepachangelog.com/en/1.1.0/
-- Semantic Versioning 2.0.0 (version 0.y.z and when to reach 1.0.0) / 语义化版本(0.y.z 以及何时到 1.0.0): https://semver.org/
+- 约定式提交规范 / Conventional Commits 1.0.0: https://www.conventionalcommits.org/en/v1.0.0/
+- 更新日志格式 / Keep a Changelog 1.1.0: https://keepachangelog.com/en/1.1.0/
+- 语义化版本(0.y.z 以及何时到 1.0.0) / Semantic Versioning 2.0.0 (version 0.y.z and when to reach 1.0.0): https://semver.org/
 - GitHub Flow: https://docs.github.com/en/get-started/using-github/github-flow
-- Git Flow and the author's 2020 note / Git Flow 原文及作者 2020 年的补充: https://nvie.com/posts/a-successful-git-branching-model/
-- Trunk based development / 主干开发: https://trunkbaseddevelopment.com/
-- Branch protection REST endpoint (request body, availability for public repos on Free) / 分支保护接口(请求体、Free 计划下公开仓库可用): https://docs.github.com/en/rest/branches/branch-protection
-- About protected branches / 受保护分支说明: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches
-- Pull request templates and issue forms / PR 模板和 issue 表单: https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/creating-a-pull-request-template-for-your-repository and https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/syntax-for-issue-forms
-- Repository merge options such as squash_merge_commit_title / 仓库的合并选项: https://docs.github.com/en/rest/repos/repos#update-a-repository
-- A blog comparison of branching strategies for small teams, for background only / 小团队分支策略的博客对比,仅供参考: https://www.deployhq.com/blog/trunk-based-development-vs-gitflow
+- Git Flow 原文及作者 2020 年的补充 / Git Flow and the author's 2020 note: https://nvie.com/posts/a-successful-git-branching-model/
+- 主干开发 / Trunk based development: https://trunkbaseddevelopment.com/
+- 分支保护接口(请求体、Free 计划下公开仓库可用) / Branch protection REST endpoint (request body, availability for public repos on Free): https://docs.github.com/en/rest/branches/branch-protection
+- 受保护分支说明 / About protected branches: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches
+- PR 模板和 issue 表单 / Pull request templates and issue forms: https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/creating-a-pull-request-template-for-your-repository and https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/syntax-for-issue-forms
+- 仓库的合并选项 / Repository merge options such as squash_merge_commit_title: https://docs.github.com/en/rest/repos/repos#update-a-repository
+- 小团队分支策略的博客对比,仅供参考 / A blog comparison of branching strategies for small teams, for background only: https://www.deployhq.com/blog/trunk-based-development-vs-gitflow

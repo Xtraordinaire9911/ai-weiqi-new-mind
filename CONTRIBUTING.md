@@ -90,7 +90,7 @@ Subjects like `update`, `fix bug`, `wip` or `Merge branch 'develop'` do not tell
 
 If you want your editor to show this reminder, run `git config commit.template .gitmessage`.
 
-## PR / Pull requests
+## 拉取请求(PR) / Pull requests
 
 PR 要小而专注。查看器、流水线和数据批次分开提,这样好评审也好回退。PR 模板里有一份简短的检查清单。数据批次要写清楚覆盖了哪些视频和分组、用的 KataGo 版本、网络和搜索次数,以及目差是否已经换算成行棋方的视角。
 
