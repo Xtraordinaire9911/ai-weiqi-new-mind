@@ -1,4 +1,5 @@
 import json,sys,subprocess,os,time,re
+from treesync import make_meta   # records the tree fingerprint and the score perspective inside the output
 from wqutil import atomic_write_json,read_json,setup_stdio   # atomic: a2.json existing must mean the analysis finished
 setup_stdio()   # utf-8 log lines even on a cp936 console
 # 用法: analyze2.py n.json out.json [主搜索visits=400] [强制评估visits=150]
@@ -96,4 +97,4 @@ for i,c,m in need:
     if not f or 'cand' not in f or not f['cand']:continue
     t=f['cand'][0]
     a['cand'].append({'m':m,'v':VF,'s':round(-f['score'],1),'wr':round(1-f['wr'],3),'p':-1,'pv':[m]+t['pv'][:7],'f':1})
-p.stdin.close();atomic_write_json(out,res);print('done',round(time.time()-t0),file=sys.stderr)
+p.stdin.close();res['_meta']=make_meta(N,visits=[VB,VF],region=R,complete=not LIMIT);atomic_write_json(out,res);print('done',round(time.time()-t0),file=sys.stderr)

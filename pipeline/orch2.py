@@ -1,6 +1,7 @@
 # 无人值守流水线: 视频(下载->转写->识谱) -> 按SGF分组合并树 -> KataGo局部分析 -> 合成带解析SGF
 import json,os,sys,subprocess,glob,re,threading,time,traceback
 from concurrent.futures import ThreadPoolExecutor
+from treesync import tree_fingerprint,check_analysis,check_kp,kp_ident,USABLE
 from wqutil import atomic_write_json,atomic_write_text,read_json,find_ffmpeg,setup_stdio,utf8_env,Log   # atomic outputs: a kill mid-write must not leave partial files
 # Dirs come from env vars when set (tests, another machine); the defaults are the original Windows paths.
 HERE=os.path.dirname(os.path.abspath(__file__))   # sibling scripts (tr.py, board.py, analyze2.py) are looked up here, not in a hard coded dir
@@ -172,19 +173,39 @@ def groups():
         if any(x>MAXIDX for x in idxs):continue
         out.append((name,idxs))
     return out
+def safe_name(name):return re.sub(r'[\\/:*?"<>|]','',name)   # group name -> file name part
 def stageB(name,idxs,visits=150):
-    safe=re.sub(r'[\\/:*?"<>|]','',name);base=os.path.join(W,'g_'+safe)
-    N=build_tree(idxs);atomic_write_json(base+'.n.json',N)
+    safe=safe_name(name);base=os.path.join(W,'g_'+safe)
+    rep={'group':name,'videos':list(idxs),'time':time.strftime('%Y-%m-%d %H:%M:%S')}   # one status record per group, see status_<group>.json
+    N=build_tree(idxs);fp=tree_fingerprint(N);atomic_write_json(base+'.n.json',N)
+    rep.update(tree_fp=fp,nodes=sum(1 for n in N if not n['dead']))
+    # --- analysis: it must belong to exactly this tree, otherwise redo it (or leave the AI part out); never merge a mismatch
     a2=base+'.a2.json'
-    if not os.path.exists(a2) and not os.environ.get('NOAN'):
+    A=read_json(a2,default=None);st,msg=check_analysis(N,A)   # explicit utf-8; a damaged file reads as missing
+    if st not in USABLE and not os.environ.get('NOAN'):
+        if st!='missing':log('B',name,'analysis is',st,'-',msg,'-> running it again');os.replace(a2,a2+'.stale')   # keep the old file for inspection, it is never merged
         subprocess.run([PY,os.path.join(HERE,'analyze2.py'),base+'.n.json',a2,'220','100'],capture_output=True,env=ENV)
-    A=read_json(a2,default={})   # explicit utf-8, BOM tolerant; a damaged file reads as empty instead of crashing
+        A=read_json(a2,default=None);st,msg=check_analysis(N,A)
+    if st not in USABLE:
+        if st!='missing':log('B WARN',name,'analysis not used:',st,msg)
+        A={}
+    elif st=='legacy':log('B WARN',name,msg)
+    rep['analysis']={'status':st,'message':msg}
+    # --- key point notes (kp): same rule. A kp file without _meta that is newer than the last kpin dump was written from that dump.
     sp=os.path.join(W,'summary_%s.md'%safe);summ=open(sp,encoding='utf-8').read() if os.path.exists(sp) else ''
-    kp=os.path.join(W,'kp_'+safe+'.json');KP=read_json(kp,default={})
+    kp=os.path.join(W,'kp_'+safe+'.json');side=os.path.join(W,'kpin_'+safe+'.meta.json')
+    KPraw=read_json(kp,default=None);sc=read_json(side,default=None)
+    ident=sc if isinstance(KPraw,dict) and '_meta' not in KPraw and isinstance(sc,dict) and os.path.getmtime(kp)>=os.path.getmtime(side) else None
+    KP,kst,kmsg,stamp=check_kp(N,KPraw,ident,strict=bool(os.environ.get('WEIQI_STRICT')))
+    if stamp:KPraw['_meta']=stamp;atomic_write_json(kp,KPraw,ensure_ascii=False)   # remember which tree the notes were written for
+    if kst not in ('ok','missing'):log('B WARN',name,'key points:',kst,kmsg)
+    rep['key_points']={'status':kst,'message':kmsg,'notes':len(KP)}
     sgf=merge(N,A,idxs,name,summ,KP)
     atomic_write_json(os.path.join(W,'kpin_'+safe+'.json'),DUMP[:],ensure_ascii=False);DUMP.clear()
+    atomic_write_json(side,kp_ident(N))   # which tree this kpin dump describes (used to place the kp notes written from it)
     atomic_write_text(sgf_path(name),sgf)
-    log('B done',name,sum(1 for n in N if not n['dead']),'nodes',len(sgf))
+    atomic_write_json(os.path.join(W,'status_'+safe+'.json'),rep,ensure_ascii=False,indent=1)
+    log('B done',name,rep['nodes'],'nodes',len(sgf),'chars; analysis',st,'; key points',kst)
 if __name__=='__main__':
     setup_stdio()
     G=groups()
