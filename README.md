@@ -1,5 +1,39 @@
 # ai-weiqi-new-mind
 
+**ai-weiqi-new-mind**：围棋定式、套路和避雷的学习库，每一手都配有老师讲解、要点和 KataGo 局部评估。
+
+**ai-weiqi-new-mind**: a study library of Go joseki, trick openings and trap avoidance, with the teacher's commentary, key points and a local KataGo evaluation on every move.
+
+## 署名与引用 / Credit and citation
+
+本项目允许出于非商业目的使用、修改和分享，前提是署名。分享或发布本项目、修改后的版本，或基于它做出的作品时，请使用下面的署名行。完整说明见 [NOTICE.md](NOTICE.md)。
+
+You may use, change and share this project for noncommercial purposes, as long as you credit it. When you share or publish this project, a modified version or anything built from it, please use the credit line below. The full details are in [NOTICE.md](NOTICE.md).
+
+```
+基于 Xtraordinaire9911 的 ai-weiqi-new-mind（https://github.com/Xtraordinaire9911/ai-weiqi-new-mind），代码采用 PolyForm Noncommercial 1.0.0 许可，数据与文档采用 CC BY-NC-SA 4.0 许可
+```
+
+```
+Based on ai-weiqi-new-mind by Xtraordinaire9911 (https://github.com/Xtraordinaire9911/ai-weiqi-new-mind), licensed under PolyForm Noncommercial 1.0.0 (code) and CC BY-NC-SA 4.0 (data and docs)
+```
+
+老师的讲解文字不在本项目的许可范围内，署名归原作者陈林涛。
+
+The teacher's commentary text is not licensed by this project, and its credit goes to the original author, 陈林涛.
+
+### 如何引用 / How to cite
+
+在文章、视频简介或网页里引用本项目时，可以这样写：
+
+If you cite this project in an article, a video description or a web page, you can write:
+
+```
+Xtraordinaire9911. ai-weiqi-new-mind, v0.1. https://github.com/Xtraordinaire9911/ai-weiqi-new-mind. Code under PolyForm Noncommercial 1.0.0, data and docs under CC BY-NC-SA 4.0.
+```
+
+## 简介 / Overview
+
 围棋定式、套路和避雷的“AI + 老师讲解”学习库。把围棋老师的视频讲解整理成 **SGF 变化树**，每一手配上：
 
 A study library of Go joseki, trick openings and trap avoidance, built from a teacher's video lessons plus KataGo analysis. Each lesson becomes an **SGF variation tree**, and every move carries:
@@ -69,6 +103,7 @@ Use ←→ to step and ↑↓ to choose a variation. On the board, a **transluce
 | `pipeline/` | 无人值守的流水线：下载、转写、识谱、变化树、KataGo、SGF / The unattended pipeline: download, transcription, board recognition, variation tree, KataGo, SGF |
 | `engine-config/` | KataGo 配置（不含程序和权重） / KataGo configuration (no binaries, no weights) |
 | `docs/usage.md` | 命名规则、SGF 约定、如何新增 UP 主 / Naming rules, SGF conventions, how to add a new uploader |
+| `LICENSE`, `LICENSE-DATA.txt`, `NOTICE.md` | 许可证文本和署名说明 / License texts and credit instructions |
 | `CHANGELOG.md`, `VERSION` | 版本记录与当前版本号 / Release notes and the current version number |
 
 ## 流水线（`pipeline/`） / Pipeline (`pipeline/`)
@@ -101,9 +136,9 @@ The key point summaries `kp_*.json` (node number to key point) are written by a 
 
 ## 内容来源与版权 / Content sources and copyright
 
-- 老师讲解文字来自 B 站 UP 主 **陈林涛** 公开视频语音的自动转写与整理。视频和讲解内容的版权归原作者所有，讲解文字不在本仓库任何许可证的覆盖范围内；本项目仅用于个人学习研究。**如原作者或权利人提出要求，将立即移除相关内容。**
+- 老师讲解文字来自 B 站 UP 主 **陈林涛** 公开视频语音的自动转写与整理。视频和讲解内容的版权归原作者所有，讲解文字不在本仓库任何许可证的覆盖范围内；本项目对这部分文字仅用于个人学习研究。**如原作者或权利人提出要求，将立即移除相关内容。**
 
-  The teacher's commentary text is an automatic transcription and cleanup of the speech in the public videos of the Bilibili uploader **陈林涛** (Chen Lintao). The copyright of the videos and of the commentary belongs to the original author. The commentary text is not covered by any license of this repository, and the project is for personal study and research only. **If the original author or rights holder asks, the content will be removed right away.**
+  The teacher's commentary text is an automatic transcription and cleanup of the speech in the public videos of the Bilibili uploader **陈林涛** (Chen Lintao). The copyright of the videos and of the commentary belongs to the original author. The commentary text is not covered by any license of this repository, and the project uses that text for personal study and research only. **If the original author or rights holder asks, the content will be removed right away.**
 
 - 不包含视频文件、KataGo 程序和神经网络权重，请自行从官方渠道获取，例如 KataGo 官方发布页。
 
@@ -111,9 +146,13 @@ The key point summaries `kp_*.json` (node number to key point) are written by a 
 
 ## 许可证 / License
 
-代码采用 PolyForm Strict License 1.0.0 许可。为本项目编写的数据和文档采用 CC BY-NC-ND 4.0 许可。老师的讲解文字不在这两份许可的范围内：它不受任何一份许可覆盖，仍归原作者所有，之后会迁移到私有仓库。详情见 [NOTICE.md](NOTICE.md)。
+代码采用 PolyForm Noncommercial License 1.0.0 许可。为本项目编写的数据和文档采用 CC BY-NC-SA 4.0 许可。两者都允许非商业使用、修改和非商业再分发，但必须署名，署名写法见上面的“署名与引用”和 [NOTICE.md](NOTICE.md)。数据和文档的改编版本必须沿用同样的 CC BY-NC-SA 4.0 许可。
 
-The code is licensed under the PolyForm Strict License 1.0.0. The data and documents written for this project are licensed under CC BY-NC-ND 4.0. The teacher's commentary text is excluded from both: it is not covered by either license, it stays with its original author, and it will be moved to a private repository. See [NOTICE.md](NOTICE.md) for the details.
+The code is licensed under the PolyForm Noncommercial License 1.0.0. The data and documents written for this project are licensed under CC BY-NC-SA 4.0. Both allow noncommercial use, modification and noncommercial redistribution, but credit is mandatory. The wording is in "Credit and citation" above and in [NOTICE.md](NOTICE.md). Adapted versions of the data and documents must keep the same CC BY-NC-SA 4.0 license.
+
+老师的讲解文字不在这两份许可的范围内：它不受任何一份许可覆盖，署名归原作者陈林涛，之后会迁移到私有仓库。商业使用需要另行取得书面许可，请通过 issue 或本仓库所有者的 GitHub 账号询问。v0.1 及更早的副本发布时没有附带许可证。
+
+The teacher's commentary text is excluded from both licenses: it is not covered by either one, its credit goes to the original author 陈林涛, and it will be moved to a private repository. Commercial use needs a separate written permission, so please ask through an issue or through the GitHub account of the repository owner. The v0.1 snapshot and earlier copies were published without a license.
 
 ## 版本策略 / Version policy
 
