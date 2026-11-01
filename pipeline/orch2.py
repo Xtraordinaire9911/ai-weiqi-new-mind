@@ -1,19 +1,34 @@
 # 无人值守流水线: 视频(下载->转写->识谱) -> 按SGF分组合并树 -> KataGo局部分析 -> 合成带解析SGF
 import json,os,sys,subprocess,glob,re,threading,time,traceback
 from concurrent.futures import ThreadPoolExecutor
-from wqutil import atomic_write_json,atomic_write_text   # atomic outputs: a kill mid-write must not leave partial files
-W=r'D:\tmp\work';V=r'D:\tmp\vid';PROJ=r'D:\workspace\fun\Weiqi\Weiqi_AI\josekiapp'
-PY=os.environ['LOCALAPPDATA']+r'\Programs\Python\Python312\python.exe'
-FF=glob.glob(os.environ['LOCALAPPDATA']+r'\Microsoft\WinGet\Packages\Gyan.FFmpeg*\**\ffmpeg.exe',recursive=True)[0]
-IDX=json.load(open(PROJ+r'\data\sources\chenlintao\index.json',encoding='utf-8-sig'))
-PLAN=json.load(open(PROJ+r'\data\sources\chenlintao\plan.json',encoding='utf-8-sig'))
+from wqutil import atomic_write_json,atomic_write_text,read_json,find_ffmpeg   # atomic outputs: a kill mid-write must not leave partial files
+# Dirs come from env vars when set (tests, another machine); the defaults are the original Windows paths.
+HERE=os.path.dirname(os.path.abspath(__file__))   # sibling scripts (tr.py, board.py, analyze2.py) are looked up here, not in a hard coded dir
+W=os.environ.get('WEIQI_WORK',r'D:\tmp\work');V=os.environ.get('WEIQI_VID',r'D:\tmp\vid')
+PROJ=os.environ.get('WEIQI_PROJ',r'D:\workspace\fun\Weiqi\Weiqi_AI\josekiapp')
+SOURCE=os.environ.get('WEIQI_SOURCE','chenlintao');SEASON=int(os.environ.get('WEIQI_SEASON','1500387'))   # uploader folder under data/sources + playlist (season) id
+MAXIDX=int(os.environ.get('WEIQI_MAX_IDX','49'))   # groups that contain a later video are skipped (not downloaded yet)
+def _find_py():   # interpreter for the child scripts: env, the Python 3.12 this pipeline was built with, else the current one
+    if os.environ.get('WEIQI_PY'):return os.environ['WEIQI_PY']
+    c=os.path.join(os.environ.get('LOCALAPPDATA',''),'Programs','Python','Python312','python.exe')
+    return c if os.path.exists(c) else sys.executable
+PY=_find_py()
+FF=find_ffmpeg()   # None when missing: stageA reports a clear error instead of an IndexError at import time
+def load_sources():
+    """(Re)load index.json and plan.json of SOURCE. Returns an error text instead of raising, so importing this module never fails."""
+    global IDX,PLAN,vid
+    d=os.path.join(PROJ,'data','sources',SOURCE)
+    try:IDX=read_json(os.path.join(d,'index.json'));PLAN=read_json(os.path.join(d,'plan.json'))
+    except (OSError,ValueError) as e:IDX,PLAN,vid=[],{'merge':{},'series':{}},{};return str(e)
+    vid={x['idx']:x for x in IDX if x['season']==SEASON};return ''
+SRC_ERR=load_sources()
 DL=threading.Semaphore(1)
 log=lambda *a:print(time.strftime('%H:%M:%S'),*a,flush=True)
-vid={x['idx']:x for x in IDX if x['season']==1500387}
-def D(i):return os.path.join(W,'v',str(i));
+def D(i):return os.path.join(W,'v',str(i))   # per video cache dir: v.mp4, t.json (transcript), b.json (board frames)
 # ---- 阶段A: 单视频 ----
 def stageA(i):
-    os.makedirs(D(i),exist_ok=True);b=vid[i]['bvid'];mp4=D(i)+r'\v.mp4'
+    if not FF:raise RuntimeError('ffmpeg not found (set FFMPEG=path)')
+    os.makedirs(D(i),exist_ok=True);b=vid[i]['bvid'];mp4=os.path.join(D(i),'v.mp4');tj=os.path.join(D(i),'t.json');bj=os.path.join(D(i),'b.json')
     if not os.path.exists(mp4):
         with DL:
             for k in range(40):
@@ -21,8 +36,8 @@ def stageA(i):
                 if os.path.exists(mp4) and os.path.getsize(mp4)>1e6:break
                 time.sleep(45)
             else:raise RuntimeError('download failed %d'%i)
-    if not os.path.exists(D(i)+r'\t.json'):subprocess.run([PY,W+r'\tr.py',mp4,D(i)+r'\t.json'],check=True,capture_output=True)
-    if not os.path.exists(D(i)+r'\b.json'):subprocess.run([PY,W+r'\board.py',mp4,D(i)+r'\b.json',FF],check=True,capture_output=True)
+    if not os.path.exists(tj):subprocess.run([PY,os.path.join(HERE,'tr.py'),mp4,tj],check=True,capture_output=True)
+    if not os.path.exists(bj):subprocess.run([PY,os.path.join(HERE,'board.py'),mp4,bj,FF],check=True,capture_output=True)
     log('A done',i,vid[i]['title'])
 # ---- 分组树 (多视频合并) ----
 C=18;DT=1/6
@@ -32,7 +47,7 @@ def build_tree(vids):
     def new(pos,par,mv,t,vi,setup=False):
         nodes.append({'pos':pos,'par':par,'mv':mv,'v':[[t,t+DT,vi]],'ch':[],'setup':setup});nodes[par]['ch'].append(len(nodes)-1);return len(nodes)-1
     for vi,i in enumerate(vids):
-        fr=json.load(open(D(i)+r'\b.json'));cur=None;prevs=None
+        fr=read_json(os.path.join(D(i),'b.json'));cur=None;prevs=None
         for t,s in fr:
             if s is None:continue
             if s==prevs:
@@ -79,7 +94,7 @@ def mm(vi,t):return '@%d|%d:%02d'%(vi,t//60,t%60)
 def esc(s):return s.replace('\\','\\\\').replace(']','\\]')
 DUMP=[]
 def merge(N,A,vids,name,summ='',KP={}):
-    T=[json.load(open(D(i)+r'\t.json',encoding='utf-8')) for i in vids]
+    T=[read_json(os.path.join(D(i),'t.json')) for i in vids]
     IV=sorted((a,b,k,vi) for k,n in enumerate(N) if not n['dead'] for a,b,vi in n['v'])
     SEG={}
     for vi,tt in enumerate(T):
@@ -147,10 +162,13 @@ def merge(N,A,vids,name,summ='',KP={}):
         return s+''.join('('+node(c)+')' for c in ch)
     return '(;GM[1]FF[4]CA[UTF-8]SZ[19]KM[6.5]GN[%s]PC[陈林涛 %s]%s)'%(name,' '.join(vid[i]['bvid'] for i in vids),node(0))
 # ---- 阶段B: 分组 ----
+def sgf_path(name):   # data/sgf/<uploader>/<series>/<group>.sgf; the series folder name comes from plan.json
+    return os.path.join(PROJ,'data','sgf',SOURCE,PLAN['series'][str(SEASON)],name+'.sgf')
 def groups():
+    if SRC_ERR:raise RuntimeError('cannot read index.json/plan.json: '+SRC_ERR)
     out=[]
-    for name,idxs in PLAN['merge']['1500387']:
-        if any(x>49 for x in idxs):continue
+    for name,idxs in PLAN['merge'][str(SEASON)]:
+        if any(x>MAXIDX for x in idxs):continue
         out.append((name,idxs))
     return out
 def stageB(name,idxs,visits=150):
@@ -158,17 +176,17 @@ def stageB(name,idxs,visits=150):
     N=build_tree(idxs);atomic_write_json(base+'.n.json',N)
     a2=base+'.a2.json'
     if not os.path.exists(a2) and not os.environ.get('NOAN'):
-        subprocess.run([PY,W+r'\analyze2.py',base+'.n.json',a2,'220','100'],capture_output=True)
+        subprocess.run([PY,os.path.join(HERE,'analyze2.py'),base+'.n.json',a2,'220','100'],capture_output=True)
     A=json.load(open(a2)) if os.path.exists(a2) else {}
-    summ=open(W+r'\summary_%s.md'%safe,encoding='utf-8').read() if os.path.exists(W+r'\summary_%s.md'%safe) else ''
+    sp=os.path.join(W,'summary_%s.md'%safe);summ=open(sp,encoding='utf-8').read() if os.path.exists(sp) else ''
     kp=os.path.join(W,'kp_'+safe+'.json');KP=json.load(open(kp,encoding='utf-8')) if os.path.exists(kp) else {}
     sgf=merge(N,A,idxs,name,summ,KP)
     atomic_write_json(os.path.join(W,'kpin_'+safe+'.json'),DUMP[:],ensure_ascii=False);DUMP.clear()
-    atomic_write_text(PROJ+r'\data\sgf\chenlintao\定式大全\%s.sgf'%name,sgf)
+    atomic_write_text(sgf_path(name),sgf)
     log('B done',name,sum(1 for n in N if not n['dead']),'nodes',len(sgf))
 if __name__=='__main__':
-    G=groups();need=sorted({i for _,ix in G for i in ix},key=lambda i:-IDXDUR.get(i,0)) if False else None
-    dur={x['idx']:x['sec'] for x in IDX if x['season']==1500387}
+    G=groups()
+    dur={x['idx']:x['sec'] for x in IDX if x['season']==SEASON}
     gp=sorted(G,key=lambda g:(g[0]!='小目-小飞挂-二间高夹',-sum(dur[i] for i in g[1])))   # 总时长长的优先
     order=[i for _,ix in gp for i in ix]
     ready={};ev=threading.Condition()

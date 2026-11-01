@@ -2,7 +2,9 @@ import json,sys,subprocess,os,time,re
 from wqutil import atomic_write_json   # atomic: a2.json existing must mean the analysis finished
 # 用法: analyze2.py n.json out.json [主搜索visits=400] [强制评估visits=150]
 # 修正: KataGo 配置 reportAnalysisWinratesAs=BLACK, 所有分数/胜率均为黑方视角 -> 这里统一转成"当前行棋方视角"(stm)
-root=r'D:\workspace\fun\Weiqi\Weiqi_AI';E=root+r'\engine\katago-v1.18.0-opencl-windows-x64'
+# KataGo location can be overridden by env (default: the original install)
+root=os.environ.get('WEIQI_KATAGO_ROOT',r'D:\workspace\fun\Weiqi\Weiqi_AI');E=os.environ.get('WEIQI_KATAGO_DIR',os.path.join(root,'engine','katago-v1.18.0-opencl-windows-x64'))
+MODEL=os.environ.get('WEIQI_KATAGO_MODEL',os.path.join(root,'weights','network_file','kata1-tf3-b11c768-s12752M-d6531M.bin.gz'))
 N=json.load(open(sys.argv[1]));out=sys.argv[2]
 VB=int(sys.argv[3]) if len(sys.argv)>3 else 220;VF=int(sys.argv[4]) if len(sys.argv)>4 else 100
 LIMIT=int(os.environ.get('LIMIT','0'))
@@ -52,7 +54,7 @@ rootkids=[i for i in range(len(N)) if not N[i]['dead'] and N[i]['setup'] and len
 todo=sorted(set(todo+rootkids))
 if LIMIT:todo=todo[:LIMIT]
 print('branch nodes',len(todo),file=sys.stderr)
-p=subprocess.Popen([E+r'\katago.exe','analysis','-model',root+r'\weights\network_file\kata1-tf3-b11c768-s12752M-d6531M.bin.gz','-config',E+r'\analysis.cfg'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=open(out+'.err','w'),text=True,encoding='utf-8')
+p=subprocess.Popen([os.path.join(E,'katago.exe'),'analysis','-model',MODEL,'-config',os.path.join(E,'analysis.cfg')],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=open(out+'.err','w'),text=True,encoding='utf-8')
 t0=time.time()
 def run(reqs):
     for r in reqs:p.stdin.write(json.dumps(r)+'\n')

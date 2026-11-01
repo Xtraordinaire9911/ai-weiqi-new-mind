@@ -6,8 +6,10 @@ written. A half written json or sgf must never be visible, so every output goes
 through atomic_write_*. Reads go through read_json, which copes with a BOM and
 gives an error message that names the file.
 """
+import glob
 import json
 import os
+import shutil
 import threading
 import time
 
@@ -80,3 +82,21 @@ def read_json(path, default=_MISSING, quarantine=False):
         if default is not _MISSING:
             return default
         raise ValueError('%s is not valid json: %s' % (path, e)) from e
+
+
+def find_ffmpeg():
+    """Return the ffmpeg path: env FFMPEG, the WinGet install this pipeline was built on, or PATH.
+
+    Returns None when nothing is found; callers must turn that into a clear error
+    (the old code did glob(...)[0] at import time and died with an IndexError).
+    """
+    p = os.environ.get('FFMPEG')
+    if p and os.path.exists(p):
+        return p
+    la = os.environ.get('LOCALAPPDATA')
+    if la:
+        pat = os.path.join(la, 'Microsoft', 'WinGet', 'Packages', 'Gyan.FFmpeg*', '**', 'ffmpeg.exe')
+        hits = glob.glob(pat, recursive=True)
+        if hits:
+            return hits[0]
+    return shutil.which('ffmpeg')
