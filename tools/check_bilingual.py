@@ -81,8 +81,7 @@ DEFAULT_PATTERNS = [
 DEFAULT_EXEMPT = [
     "LICENSE",
     "LICENSE.*",
-    "LICENSE-*",
-    "LICENCE*",
+    "LICENSE-*.txt",
     "COPYING*",
     ".gitmessage",
 ]

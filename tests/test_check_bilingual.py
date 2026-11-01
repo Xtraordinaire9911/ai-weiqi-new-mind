@@ -628,3 +628,11 @@ def test_glob_matching_rules():
     assert cb.matches_any("docs/a.md", ["docs/*.md"]) is True
     assert cb.matches_any("docs/x/a.md", ["docs/*.md"]) is False
     assert cb.matches_any("docs/x/a.md", ["docs/**"]) is True
+
+
+def test_default_exempt_list_keeps_license_advice_but_skips_license_texts():
+    assert cb.matches_any("LICENSE", cb.DEFAULT_EXEMPT)
+    assert cb.matches_any("LICENSE-DATA.txt", cb.DEFAULT_EXEMPT)
+    assert cb.matches_any(".gitmessage", cb.DEFAULT_EXEMPT)
+    assert not cb.matches_any("docs/LICENSE-ADVICE.md", cb.DEFAULT_EXEMPT)
+    assert not cb.matches_any("NOTICE.md", cb.DEFAULT_EXEMPT)
