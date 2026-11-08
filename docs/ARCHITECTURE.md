@@ -324,3 +324,354 @@ Each entry of the `AN` property is separated by a semicolon and has six colon se
 **第 6 步，查看器。** 打开这个节点时，棋盘上会出现：黑色半透明棋子的三个候选点（因为轮到黑棋），圈的颜色按目差分绿、橙、红，圈下面写"最优"或 -0.2、-0.7；老师走的两个点 R12 和 Q12 上有蓝色虚线圈和数字 1、2，对应右边的变化列表；右边的评论被切成"老师讲解""AI 局部评估""周边子力影响"几张卡片。悬停在候选点上会预览那条变化，具体见第 3 节。
 
 **Step 6, the viewer.** When you open this node the board shows three translucent black stones as candidates (because Black is to move), the ring colour is green, orange or red by loss and the label under it says "最优" or -0.2, -0.7. The two points the teacher played, R12 and Q12, carry dashed blue circles with the numbers 1 and 2 that match the variation list on the right, and the comment on the right is cut into cards "老师讲解", "AI 局部评估" and "周边子力影响". Hovering a candidate previews that line, see section 3 for the details.
+
+## 2. 流水线逐阶段 / The pipeline, stage by stage
+
+这一节按流水线的先后顺序，一个阶段一个阶段地讲：它做什么、为什么这样做、对应哪个文件哪个函数（括号里是大致行号），以及它会在哪里出错、代码怎样防住。每个阶段最后都有一句"限制"，把已知的弱点说清楚。
+
+This section goes through the pipeline in order, one stage at a time: what it does, why it is built that way, which function of which file does it (approximate lines in brackets), where it can go wrong and how the code guards against that. Every stage ends with a "limit" sentence that states the known weak spots plainly.
+
+### 2.1 总调度和工作目录 / The driver and the work folder
+
+流水线的"总指挥"是 `pipeline/orch2.py`。它不在仓库里跑，而是在作者电脑上的一个单独的"工作目录"里跑，默认是 `D:\tmp\work`（环境变量 `WEIQI_WORK` 可以改）。这样分开是因为工作目录里有下载的视频和各种缓存（写这份指南时主工作目录约 1.3 GB，并且会随视频增多而增长），不能进仓库；仓库里只放脚本和最终成果，脚本用 `tools/sync_pipeline.ps1` 从工作目录单向拷进仓库的 `pipeline/`（方向永远是工作目录到仓库，从不反过来）。脚本里的默认路径是写死的 Windows 路径（`orch2.py` L9-14），换电脑要用环境变量覆盖，常用的有 `WEIQI_WORK`、`WEIQI_PROJ`、`WEIQI_SOURCE`、`WEIQI_SEASON`、`WEIQI_MAX_IDX`、`FFMPEG`，完整清单在 `docs/PREMORTEM.md` 第 5 节。
+
+The "conductor" of the pipeline is `pipeline/orch2.py`. It does not run inside the repository but in a separate "work folder" on the owner's computer, `D:\tmp\work` by default (the environment variable `WEIQI_WORK` changes it). They are separate because the work folder holds the downloaded videos and all kinds of caches (about 1.3 GB for the main work folder when this guide was written, and it grows with every video) that cannot go into the repository. The repository only holds the scripts and the final results, and the scripts are copied one way from the work folder into the repo's `pipeline/` with `tools/sync_pipeline.ps1` (the direction is always work folder to repository, never back). The default paths in the scripts are hard coded Windows paths (`orch2.py` L9-14), so another computer needs environment variables, the common ones being `WEIQI_WORK`, `WEIQI_PROJ`, `WEIQI_SOURCE`, `WEIQI_SEASON`, `WEIQI_MAX_IDX` and `FFMPEG`, and the complete list is in section 5 of `docs/PREMORTEM.md`.
+
+`orch2.py` 的最后几行（L379-384）先拿一把"文件锁" `orch2.lock`，保证同一时间只有一个 orch2 在跑（两个同时跑会抢下载、抢显卡、互相覆盖输出；进程退出时系统自动释放锁，所以崩溃也不会留下死锁）。然后 `run_pipeline()`（L346-378）开始干活：把所有分组按视频总时长从长到短排好（有一个分组 `小目-小飞挂-二间高夹` 被固定排在最前面，看起来是最早试验时留下的习惯），用一个 2 个线程的线程池在后台处理各个视频（阶段 A），主线程则按顺序等每个分组的视频都就绪，然后构建这个分组（阶段 B）。阶段 B 里有最慢的 KataGo 分析，所以它在主线程里一个一个串行地跑，而下载和转写在后台继续。全部跑完后还有一轮"补考"：失败的视频等 600 秒再试一次，成功的话它们所在的分组会重新构建。
+
+The last lines of `orch2.py` (L379-384) first take a "file lock" `orch2.lock` so that only one orch2 runs at a time (two at once would fight over downloads and the graphics card and overwrite each other's output; the system releases the lock when the process ends, so a crash never leaves a stale lock). Then `run_pipeline()` (L346-378) starts working: it sorts all groups by total video length, longest first (one group, `小目-小飞挂-二间高夹`, is always put first, which looks like a habit left over from the first experiments), processes the videos in the background with a pool of 2 threads (stage A), while the main thread waits in order until all videos of a group are ready and then builds that group (stage B). Stage B contains the slowest part, the KataGo analysis, so it runs group after group in the main thread while downloading and transcribing carry on in the background. After everything there is one "resit" round: failed videos wait 600 seconds and try once more, and if they succeed, their groups are rebuilt.
+
+线程和信号量是两个词：线程像同一家厨房里的几个厨师，可以同时各炒各的菜；信号量像厨房里唯一一口大锅，同一时间只能一个人用，用完才轮到下一个。`orch2.py` 里 `DL = threading.Semaphore(1)`（L28）就是"下载只能同时一个"。
+
+Thread and semaphore are two words worth knowing. Threads are like several cooks in one kitchen who can cook their own dishes at the same time. A semaphore is like the single big wok in the kitchen that only one person can use at a time. In `orch2.py`, `DL = threading.Semaphore(1)` (L28) means "only one download at a time".
+
+工作目录里的文件，按"谁写、谁读"整理如下。你不需要记住它们，但排查问题时它们是第一手线索：
+
+The files in the work folder, by who writes and who reads them. You do not need to memorise them, but when something goes wrong they are the first clues:
+
+| 文件 / File | 内容 / Content | 谁写 / Written by |
+|---|---|---|
+| `v/<序号>/v.mp4` | 下载的视频 / The downloaded video | `download()` |
+| `v/<序号>/t.json` | 转写：`[{s, e, t}]` / Transcript | `tr.py` |
+| `v/<序号>/b.json` | 棋盘帧：`[[秒, 342 字符串或 null]]` / Board frames | `board.py` |
+| `v/<序号>/b.meta.json`、`*.rej.json` | 识别统计，或被拒绝的原因 / Recognition statistics, or the reason for a rejection | `board.py`、`tr.py` |
+| `g_<分组>.n.json` | 变化树 / The variation tree | `stageB()` |
+| `g_<分组>.a2.json` | AI 评估结果，行棋方视角 / The AI evaluation, side to move perspective | `analyze2.py` |
+| `g_<分组>.a2.json.part`、`.progress.log`、`.stale` | 断点、进度与预计剩余时间、作废的旧评估 / Checkpoint, progress with ETA, an obsolete old evaluation | `analyze2.py`、`stageB()` |
+| `kpin_<分组>.json`、`kp_<分组>.json` | 导给写要点的助手的文字，以及它写回来的要点 / The text handed to the helper that writes key points, and the notes it wrote back | `stageB()`、助手 / `stageB()`, the helper |
+| `summary_<分组>.md` | 可选的整组概述，进入根节点注释；流水线只读取它，不生成它 / An optional summary of the whole group, goes into the root comment; the pipeline only reads it and never makes it | 流水线之外 / outside the pipeline |
+| `fixlog_<分组>.json` | 这次触发了哪些错别字规则 / Which typo rules fired this time | `stageB()` |
+| `status_<分组>.json` | 这个分组这一轮的完整状态记录 / The full status record of this group for this round | `stageB()` |
+| `failed_videos.json`、`logs/orch2.log` | 失败的视频及原因，主日志 / Failed videos and why, the main log | `orch2.py` |
+| `rejected/<分组>.sgf` | 被护栏拒绝写入的候选 SGF / A candidate SGF the guard refused to write | `stageB()` |
+
+下面这张图是阶段 B 里 `stageB()`（L294-345）对"评估数据能不能用"和"新 SGF 能不能覆盖旧 SGF"的两道决定。它是整个流水线最重要的防线：宁可不更新，也不写坏东西。
+
+The diagram below shows the two decisions `stageB()` (L294-345) makes in stage B: "may the evaluation data be used" and "may the new SGF replace the old SGF". It is the most important line of defence of the whole pipeline: better not to update than to write something wrong.
+
+```mermaid
+flowchart TD
+  S["stageB(分组)"] --> T["build_tree + tree_fingerprint"]
+  T --> C{"a2.json 属于这棵树吗 check_analysis"}
+  C -- "ok 或 legacy" --> U["可以使用"]
+  C -- "missing stale incomplete bad_persp" --> R{"设置了 NOAN 吗"}
+  R -- "没有" --> RUN["run_analysis 运行 analyze2.py"]
+  RUN --> C2["再检查一次"]
+  C2 --> U
+  R -- "设置了" --> SK["这一轮不带 AI 评估"]
+  U --> MG["merge 合并"]
+  SK --> MG
+  MG --> D{"sgf_decision 有效且不比旧文件差吗"}
+  D -- "是" --> W["atomic_write_text 原子写入"]
+  D -- "否" --> REJ["保留旧文件, 候选存进 rejected"]
+```
+
+图：评估必须"属于这棵树"才用，新 SGF 必须"有效且不比旧的差"才写。
+
+Figure: an evaluation is used only if it "belongs to this tree", a new SGF is written only if it is "valid and not poorer than the old one".
+
+**限制 / Limit。** 调度是针对一台 Windows 电脑、一个固定的 B 站作者写的，路径和一些习惯（例如固定的优先分组、`WEIQI_MAX_IDX` 默认 49）都是历史遗留；换作者要提供自己的 `index.json` 和 `plan.json`（`docs/usage.md`），`validate_plan()` 会在开工前检查它们。
+
+The driver was written for one Windows computer and one Bilibili author, and the paths and some habits (the fixed priority group, `WEIQI_MAX_IDX` defaulting to 49) are historical leftovers. Another author needs their own `index.json` and `plan.json` (`docs/usage.md`), and `validate_plan()` checks them before any work starts.
+
+### 2.2 下载 / Download
+
+**做什么 / What。** `download(i)`（`orch2.py` L55-70）用 yt-dlp 把第 i 个视频下载成 `v.mp4`，画质限制在 720p 以内、编码选 avc（`-f 'bv*[height<=720][vcodec^=avc]+ba/b[height<=720]/b'`）。`-N 1` 表示一次只下一个分片，`--sleep-requests 1` 表示每次请求之间停 1 秒，都是为了对服务器客气。下载完成的判断不是"文件存在"，而是"文件超过 1 MB，并且用 ffmpeg 量出来的时长至少是 `index.json` 里记录时长的 80%"，否则当作被截断或下到了预告片，改名成 `v.mp4.short` 重试（`probe_duration()` L48-54）。
+
+`download(i)` (`orch2.py` L55-70) uses yt-dlp to download video number i as `v.mp4`, with the quality limited to 720p and the codec avc (`-f 'bv*[height<=720][vcodec^=avc]+ba/b[height<=720]/b'`). `-N 1` means one fragment at a time and `--sleep-requests 1` pauses 1 second between requests, both to be polite to the server. "Finished" is not judged by "the file exists" but by "the file is larger than 1 MB and the length measured with ffmpeg is at least 80% of the length recorded in `index.json`", otherwise it counts as truncated or as a preview clip, and the file is renamed `v.mp4.short` and the download is tried again (`probe_duration()` L48-54).
+
+**为什么要退避 / Why back off。** B 站会在请求太快时返回非标准的错误码 567（有时是 412 或 429），意思是"你太快了，先停一停"。这就是限流。如果被拒绝后马上重试，只会让限流持续得更久。所以 `retry_with_backoff()`（`pipeline/wqutil.py` L156-172）让每次失败后等得更长：基础 60 秒，每次乘 3，也就是 60、180、540 秒，再加最多 20% 的随机抖动；这叫"退避"，像敲门没人应，下次隔更久再敲，而不是不停地砸门。最多试 4 次（`DL_TRIES`），都失败就放弃，把原因写进 `failed_videos.json`（`wqutil.Manifest`，会记录尝试次数和时间）。`failure_reason()`（L42-47）负责把 yt-dlp 的一大段报错压成一行，例如 `HTTP 567 (throttled)`。
+
+Bilibili answers with the non standard error code 567 (sometimes 412 or 429) when requests come too fast, meaning "you are too fast, stop for a while". That is throttling. Retrying right after a refusal only makes the throttling last longer. So `retry_with_backoff()` (`pipeline/wqutil.py` L156-172) waits longer after every failure: a base of 60 seconds multiplied by 3 each time, that is 60, 180 and 540 seconds, plus up to 20% random jitter. This is called "backoff", like knocking on a door nobody opens and waiting longer before the next knock instead of pounding on it. It tries at most 4 times (`DL_TRIES`), and when all fail it gives up and writes the reason into `failed_videos.json` (`wqutil.Manifest`, which also counts attempts and records the time). `failure_reason()` (L42-47) squeezes the long yt-dlp error into one line, for example `HTTP 567 (throttled)`.
+
+**一个关键的细节 / A key detail。** 下载只在 yt-dlp 真正运行的时候占着那把唯一的"下载锁" `DL`，等待重试的时候是放开的（`download()` 里 `attempt()` 内部才有 `with DL`，`sleep` 在 `retry_with_backoff` 里、锁之外）。早先的版本整个重试过程都占着锁，一个被限流的视频会把别的视频全部堵死（一组 4 个视频因此全部失败，见 `docs/PREMORTEM.md`）。
+
+The single "download lock" `DL` is held only while yt-dlp is actually running and is released while waiting for a retry (`with DL` sits inside `attempt()`, and the `sleep` is in `retry_with_backoff`, outside the lock). An earlier version held the lock for the whole retry loop, so one throttled video blocked all the others (a group of 4 videos failed completely because of it, see `docs/PREMORTEM.md`).
+
+**清单 / The manifest。** `failed_videos.json` 就是"失败清单"，每个视频一条：失败在哪个阶段（下载、识别棋盘、转写）、原因、尝试了几次、什么时候。`python wq.py status` 会把它和每个分组的状态一起打印出来。**[已运行 / ran]** 我读到的套路研究和避雷两个工作目录里的清单中，大部分失败是 `HTTP 567 (throttled)`，也有 `getaddrinfo failed`（电脑当时没网）。
+
+`failed_videos.json` is the "failure list", one entry per video: the stage that failed (download, board recognition, transcription), the reason, the number of attempts and the time. `python wq.py status` prints it together with the state of every group. **[ran]** In the lists I read in the work folders of the other two series, most failures are `HTTP 567 (throttled)`, and a few are `getaddrinfo failed` (the computer had no network at that moment).
+
+**限制 / Limit。** 退避只能缓解限流，不能消除；视频是否能下载最终取决于 B 站。代码不伪装请求头或身份，这是有意的。重试的等待时间在测试里用假的 `sleep` 跳过，所以 4 次退避的真实耗时没有被测试覆盖。
+
+Backoff eases throttling but cannot remove it, and whether a video can be downloaded ultimately depends on Bilibili. The code does not fake request headers or identity, which is deliberate. In the tests the retry waits are skipped with a fake `sleep`, so the real duration of four backoffs is not covered by a test.
+
+### 2.3 转写 / Transcription
+
+**做什么 / What。** `pipeline/tr.py` 先用 ffmpeg 把视频的声音抽成 16 kHz 单声道（`extract_audio()`，L19-23），再交给 faster-whisper（Whisper 的一个更快的实现）。模型是 `small`，在 CPU 上用 `int8` 量化运行，语言固定为中文，并且给了一段"提示词"（`PROMPT`，L16），里面列着"二间高夹 小目 小飞挂 征子"这类围棋词汇，让 Whisper 更倾向于写出这些词。结果是 `t.json`：一个列表，每项是 `{s: 开始秒, e: 结束秒, t: 文字}`。
+
+`pipeline/tr.py` first extracts the sound of the video to 16 kHz mono with ffmpeg (`extract_audio()`, L19-23) and then hands it to faster-whisper (a faster implementation of Whisper). The model is `small`, run on the CPU with `int8` quantisation, the language is fixed to Chinese, and a "prompt" (`PROMPT`, L16) lists Go words such as "二间高夹 小目 小飞挂 征子" so that Whisper leans towards writing these words. The result is `t.json`: a list where each item is `{s: start second, e: end second, t: text}`.
+
+**为什么要检查 / Why check。** 最初的版本从不看结果：音频抽取失败时得到一个空的转写，也被当作"完成"永远保存下来。现在 `check_transcript()`（L26-41）会拒绝这些情况：没有音频、一分钟以上的音频却没有任何语音、两分钟以上的音频平均每分钟不到 10 个字、替换字符 `U+FFFD`（编码损坏的标志）超过 2%、以及时间戳超出音频长度。被拒绝的视频不写 `t.json`，而是写 `t.rej.json` 说明原因，退出码是 3，之后同一个视频不会重复这个昂贵的步骤。
+
+The first version never looked at the result: when audio extraction failed it saved an empty transcript as "done" for ever. Now `check_transcript()` (L26-41) refuses these cases: no audio, more than a minute of audio with no speech, fewer than 10 characters per minute on average for audio over two minutes, more than 2% replacement characters `U+FFFD` (a sign of damaged encoding), and timestamps beyond the audio length. A rejected video gets no `t.json` but a `t.rej.json` with the reason and exit code 3, and the same video does not repeat this expensive step later.
+
+**限制 / Limit。** 这是整条链里最不可靠的一环之一，因为语音识别会听错同音字：真实数据里最常见的是"黑旗/黑鸡"（应为黑棋）、"搬/班/斑"（应为扳）、"争子/针子"（应为征子）、"拖鲜/拖鞋"（应为脱先）。偶尔还会冒出一小段乱码般的中英混杂文字，或者整句被截断。围棋术语越冷门，越容易错。词典（2.9）能修掉已知的错，修不掉没见过的错，所以要点和评论里仍可能残留错字 **[未核实：没有人逐字核对过全部文本]**。另外 `small` 模型是为速度选的，没有和更大的模型比较过准确率 **[未核实]**。
+
+This is one of the least reliable links of the whole chain, because speech recognition mishears homophones. The most common ones in the real data are "黑旗/黑鸡" (should be 黑棋), "搬/班/斑" (should be 扳), "争子/针子" (should be 征子) and "拖鲜/拖鞋" (should be 脱先). Sometimes a short stretch of garbled mixed Chinese and English text appears, or a whole sentence is cut off. The rarer the Go term, the likelier the mistake. The dictionary (2.9) fixes the known mistakes but not the unseen ones, so typos can remain in the key points and comments **[not verified: nobody has checked all the text word by word]**. The `small` model was chosen for speed and its accuracy was never compared with a larger model **[not verified]**.
+
+### 2.4 识别棋盘 / Board recognition
+
+**做什么 / What。** `pipeline/board.py` 用 ffmpeg 把视频解码成每秒 6 帧、统一缩放到 1134 乘 720 像素的画面（`FfmpegFrames`，L145-162），再对每一帧回答一个问题：棋盘上每个交叉点是黑子、白子还是空？做法非常朴素，不用任何机器学习：棋盘在画面里的位置是固定的，左上角第一个点在 `(X0, Y0) = (248, 40)`，相邻交叉点间隔 `D = 35.4` 像素（L22-23）；对每个交叉点，在它周围取 8 个像素，算亮度的中位数，亮度低于 75 判为黑子，亮度高于 185 且颜色饱和度低于 45 判为白子，其余是空点（`read_board()`，L45-53）。读出来的是 18 列乘 19 行，共 342 个字符。
+
+`pipeline/board.py` decodes the video with ffmpeg into 6 frames per second, all scaled to 1134 by 720 pixels (`FfmpegFrames`, L145-162), and answers one question for every frame: is each point of the board a black stone, a white stone or empty? The method is very plain, with no machine learning. The board sits at a fixed place in the picture, the first point at the top left is at `(X0, Y0) = (248, 40)` and neighbouring points are `D = 35.4` pixels apart (L22-23). For each point it takes 8 pixels around the centre and the median brightness: below 75 is a black stone, above 185 with low colour saturation (below 45) is a white stone, everything else is empty (`read_board()`, L45-53). What comes out is 18 columns by 19 rows, 342 characters.
+
+**为什么只认固定版式 / Why only the fixed layout。** 因为这样最简单也最准：陈林涛的定式大全视频用的是同一套录屏模板，棋盘的位置和大小不变，用几个像素位置的明暗就能读棋，不需要训练模型。代价是：换一种版式，所有坐标都对不上，读出来的是随机噪声，而且旧版本会"一声不吭地写出垃圾"，后面的建树程序就拿垃圾建出一棵无意义的树。所以现在每次识别后都要先过 `assess()`（L111-132）这道关，只要有一条不满足就整段视频被拒绝：
+
+The reason is that this is the simplest and most accurate way: the 定式大全 videos of 陈林涛 use one screen recording template, so the board's place and size do not change, and a few bright and dark pixel positions are enough to read the stones without training a model. The price is that with another layout every coordinate is off and what is read is random noise, and the old version "wrote garbage without a word", after which the tree builder built a meaningless tree out of it. So every recognition now has to pass `assess()` (L111-132), and failing a single check rejects the whole video:
+
+| 检查 / Check | 门槛 / Threshold | 想防住什么 / What it prevents |
+|---|---|---|
+| 视频尺寸 / Video size | 必须是 1134 乘 720 / must be 1134 by 720 | 另一种版式或分辨率 / another layout or resolution |
+| 棋盘背景可见的帧数 / Frames that show the board background | 至少 50%（`WEIQI_MIN_BOARD_RATIO`）/ at least 50% | 根本不是棋盘讲解视频 / not a board lesson at all |
+| 网格线对齐 / Grid lines line up | 中位数得分至少 20（`WEIQI_MIN_GRID_SCORE`），真实视频 46 到 91，别的版式 0 到 2 / median score at least 20, real videos 46 to 91, other layouts 0 to 2 | 坐标错位 / shifted coordinates |
+| 见到过棋子 / Stones seen | 最多一帧的棋子数必须大于 0 / the maximum stones in a frame must be above 0 | 颜色阈值不适用 / colour thresholds do not fit |
+| 棋子数合理 / Plausible stone count | 每帧棋子数的中位数不超过 150 / median stones per frame at most 150 | 把木纹或网格线当成了棋子 / wood grain or grid lines read as stones |
+
+`grid_score()`（L56-86）值得多说一句：它检查"网格线是不是真的画在几何公式算出来的位置上"，办法是比较线上像素和两条线之间像素的亮度差，每 30 个棋盘帧（约 5 秒）抽查一次，允许偏差 4 个像素。这是一个"几何和现实对不对得上"的体检。
+
+`grid_score()` (L56-86) deserves one more sentence: it checks "are the grid lines really drawn where the geometry formula says" by comparing the brightness of pixels on a line with those between two lines, sampled every 30 board frames (about 5 seconds) with a tolerance of 4 pixels. It is a health check of "does the geometry match reality".
+
+整个检查在阶段 A 里放在转写之前（`stageA()`，L89）：棋盘检查很便宜，一个版式不对的视频在这里就被拒绝，省下了耗时很长的 Whisper 转写。被拒绝的结论也会被记住（`rejected()` L76-82），以后不会为同样的视频重复这些工作，除非设置 `WEIQI_RETRY_REJECTED=1`（比如改进识别器之后）。
+
+In stage A the check runs before transcription (`stageA()`, L89): the board check is cheap, so a video with the wrong layout is refused here and the long Whisper run is saved. The verdict is also remembered (`rejected()` L76-82) so the same video does not repeat the work, unless `WEIQI_RETRY_REJECTED=1` is set (for example after improving the recogniser).
+
+**限制 / Limit。** **[已运行 / ran]** 现实中这道关确实在起作用：套路研究和避雷两个系列的视频宽度是 1028 到 1174 像素之间的各种值（不是 1134），网格得分几乎为 0（有的甚至看不到棋盘背景），大部分被拒绝了，所以这两个系列目前只有少数 SGF（见 6.1）。这是第 6 节"要把识别器做成能适应多种版式"这条待办的来源。另外，读棋盘只读了 19 列里的 18 列（`COLS = 18`，L24），最右边那一线上的子永远看不见；这是已知的、有意没改的缺陷，因为改了会让所有缓存里的点重新编号（`docs/PREMORTEM.md` 第 22 行）。识别也不会处理老师在棋盘上画的标记、数字或鼠标指针，它们可能被误读成棋子（见 2.5 的闪烁修剪）。
+
+In practice this check really works: the videos of the other two series have widths between 1028 and 1174 pixels (not 1134), their grid score is close to 0 (some show no board background at all), and most were rejected, so those two series only have a few SGFs for now (see 6.1). This is where the item "make the recogniser handle several layouts" in section 6 comes from. Also, only 18 of the 19 columns are read (`COLS = 18`, L24), so a stone on the rightmost line is never seen. This is a known defect that was deliberately left, because changing it would renumber the points in every cache (`docs/PREMORTEM.md` row 22). Recognition also does not handle marks, numbers or the mouse pointer the teacher puts on the board, which can be misread as stones (see the flicker pruning in 2.5).
+
+### 2.5 建变化树 / Building the variation tree
+
+**做什么 / What。** `build_tree(vids)`（`orch2.py` L106-145）把一个分组的所有视频的"棋盘帧"，变成一棵变化树。输入是 `b.json`：每帧一个 342 字符的字符串；输出是一个节点列表，每个节点有编号 `id`、父节点 `par`、这一手 `mv`（点的编号和颜色）、出现的时间段 `v`（`[开始, 结束, 第几个视频]`）、子节点 `ch`、是否被删除 `dead`、是否是"摆好的起始局面" `setup`、局面 `pos`。
+
+`build_tree(vids)` (`orch2.py` L106-145) turns the "board frames" of all videos of a group into a variation tree. The input is `b.json`: one string of 342 characters per frame. The output is a list of nodes, each with an `id`, a parent `par`, the move `mv` (point number and colour), the time spans `v` (`[start, end, which video]`), the children `ch`, whether it was deleted `dead`, whether it is a "laid out starting position" `setup`, and the position `pos`.
+
+算法按帧一帧一帧走，每一帧要回答"现在的局面，和已经建好的树是什么关系"，只有四种情况：
+
+The algorithm walks frame by frame, and for each frame it answers "how does the current position relate to the tree built so far". There are only four cases:
+
+1. 和上一帧完全一样：只是把当前节点的时间段延长（L116-118）。**这里要懂的是**：视频每秒 6 帧，同一个局面会连续出现几十帧，它们属于同一个节点。
+
+   Identical to the previous frame: just extend the time span of the current node (L116-118). **What to understand here**: the video has 6 frames per second, so the same position appears for dozens of frames, and they belong to one node.
+
+2. 这个局面以前出现过（在 `index` 字典里）：不新建节点，直接跳回那个旧节点，给它加一段新的时间（L124-128）。这就是**转置**（transposition）的处理：两条不同的走法顺序走到同一个局面，只算一个节点，像通过两条不同的路到了同一个路口。老师"悔棋"（退回前面的局面再试别的）也是这个情况：退回去的画面和旧节点完全一样，所以程序认出"回来了"。
+
+   This position has appeared before (it is in the `index` dictionary): no new node, jump back to the old node and add a new time span to it (L124-128). This is the handling of **transpositions**: two different move orders reaching the same position count as one node, like two different roads arriving at the same crossing. A teacher taking back moves (stepping back to an earlier position to try something else) is the same case: the picture after stepping back is identical to the old node, so the program recognises "we are back".
+
+3. 这是个新局面，而且和某个已有节点只差一手合法的棋：新建一个子节点（L129-130）。具体做法是在所有已有节点里找"和当前局面差别最小"的那个（局面之间的差异用"对称差"算，差的子数最少的优先，同样差的话优先选当前节点），然后判断"多出来的恰好是一个子，并且消失的子都是对方颜色"：下一手只能多一个子，提子只会拿掉对方的子，所以这是一手合法的棋。
+
+   It is a new position and differs from some existing node by one legal move: a new child node is created (L129-130). Concretely it looks among all existing nodes for the one that "differs least" from the current position (differences are counted as the symmetric difference, fewest differing stones first, and the current node first on a tie), then checks "exactly one stone was added and every vanished stone has the opposite colour": a move adds exactly one stone and a capture only removes the opponent's stones, so this is a legal move.
+
+4. 其他情况（新增的子不止一个、没有新增子、或者消失的子里有己方颜色）：说明视频切到了另一幅图，新建一个"摆好的起始局面"节点挂在根下面，`setup` 标记为真（L131）。导出成 SGF 时它不是一手棋，而是 `AB[...]`、`AW[...]` 这样的摆放（见 `merge()`）。
+
+   Anything else (more than one stone added, no stone added, or a vanished stone of the same colour): the video cut to another diagram, so a new "laid out starting position" node is hung under the root with `setup` true (L131). In the exported SGF it is not a move but a placement such as `AB[...]` and `AW[...]` (see `merge()`).
+
+**闪烁修剪 / Flicker pruning。** 视频里会有很短暂的"中间状态"：鼠标指针被误读成棋子、转场动画、老师画的标记。它们会建出一批只存在一两帧的叶子节点。L132-140 的循环反复删除这样的叶子：停留时间不到 0.5 秒的叶子，以及所有"摆好的起始局面"叶子（没有任何后续的摆放没有意义）。删除是迭代的，因为删掉一个叶子可能让它的父节点变成新的叶子。被删的节点只标 `dead`，不从列表里移走，这样其他节点的编号不会变。我在示例里让鼠标指针出现了 1 帧，真实运行的结果是它变成了 `dead` 的节点 3 **[已运行 / ran]**。
+
+**Flicker pruning。** Videos contain very short "intermediate states": the mouse pointer misread as a stone, a transition animation, a mark drawn by the teacher. They build a number of leaf nodes that exist for only a frame or two. The loop at L132-140 deletes such leaves again and again: leaves that stayed less than 0.5 seconds, and all "laid out starting position" leaves (a placement with nothing after it is meaningless). Deletion is iterative because deleting a leaf can turn its parent into a new leaf. A deleted node is only marked `dead` and not removed from the list, so the numbers of the other nodes do not change. In my example the mouse pointer appears for 1 frame and the real run turned it into the `dead` node 3 **[ran]**.
+
+**多个视频合并成一棵树 / Several videos in one tree。** `index` 字典对整个分组只有一份，所以同一个分组的几个视频如果讲到了相同的局面，它们共享同一个节点，每个视频各自留下自己的时间段（`v` 里的第三项是视频序号）。这就是为什么 SGF 里的 `@0|3:25` 要写"第几个视频"。
+
+**Several videos in one tree。** There is only one `index` dictionary for the whole group, so if several videos of a group reach the same position they share the same node, and each video leaves its own time spans (the third item in `v` is the video number). This is why `@0|3:25` in the SGF has to say "which video".
+
+**节点的先后顺序。** 节点的子节点按"最早出现的时间"排序（`merge()` 里的 `live()`），所以查看器里变化列表的 1、2、3 就是老师第一次展示它们的先后顺序。
+
+**Order of children。** The children of a node are sorted by "earliest appearance" (`live()` in `merge()`), so 1, 2, 3 in the viewer's variation list is the order in which the teacher first showed them.
+
+**限制 / Limit。** 这个算法有几处近似，需要你心里有数：局面用"一组（点，颜色）"表示，不记走棋顺序，所以转置会被合并，但也意味着"先走哪一手"这个信息丢了；合法性只检查"多一个子、只少对方的子"，没有真的模拟提子规则，也不懂打劫；停留不到 0.5 秒的叶子一律当作闪烁，如果老师真的快速摆了一个很短的变化，它也会被当成噪声删掉；老师在棋盘上叠加的文字、箭头只要让某个交叉点的亮度跨过阈值，就会被读成棋子。变化树的准确度没有被系统地对照视频逐点检查过 **[未核实]**，用户抽查过一些节点（第 4 节）。
+
+This algorithm has several approximations you should know. A position is a set of (point, colour) and does not remember the move order, so transpositions are merged but the information "which move came first" is lost. Legality only checks "one stone more, only opposing stones fewer" and does not really simulate the capture rules or know about ko. A leaf that stayed less than 0.5 seconds is always taken as flicker, so if the teacher really did lay out a very short variation quickly it is deleted as noise. Text or arrows the teacher overlays on the board are read as stones as soon as they push the brightness of a point across a threshold. The accuracy of the variation tree has never been checked point by point against the videos **[not verified]**, the user did spot check some nodes (section 4).
+
+### 2.6 KataGo 分析 / KataGo analysis
+
+**做什么 / What。** `pipeline/analyze2.py` 对一个分组的变化树，挑出一些节点让 KataGo 评估。它把 KataGo 当成一个子进程运行（`katago analysis`，L46-49），往它的标准输入一行写一个 JSON 请求，从它的标准输出一行读一个 JSON 答案；这种"一行一个 JSON"的格式叫 NDJSON，像一叠明信片，一张一个问题或一个答案。KataGo 用的神经网络是 `kata1-tf3-b11c768-s12752M-d6531M.bin.gz`（"权重"文件，一个 Transformer 网络，路径在 `cfg()`，L34-43），在作者的核显上用 OpenCL 跑，`remote/README.md` 里记的基准是每次查询（220 次访问）约 11 秒，一个分组约 30 到 40 分钟 **[来自 `remote/README.md`，我没有重测]**。
+
+`pipeline/analyze2.py` picks some nodes of a group's variation tree and lets KataGo evaluate them. It runs KataGo as a child process (`katago analysis`, L46-49), writes one JSON request per line to its standard input and reads one JSON answer per line from its standard output. This "one JSON per line" format is called NDJSON, like a stack of postcards, one question or one answer per card. The neural network KataGo uses is `kata1-tf3-b11c768-s12752M-d6531M.bin.gz` (the "weights" file, a Transformer network, its path is in `cfg()`, L34-43), run with OpenCL on the owner's integrated GPU, and the baseline recorded in `remote/README.md` is about 11 seconds per query (220 visits), 30 to 40 minutes per group **[from `remote/README.md`, I did not measure it again]**.
+
+**为什么只分析分叉点 / Why branch points only。** `branch_nodes()`（L269-273）只选两类节点：有两个以上活的子节点的分叉点，以及"摆好的起始局面"后面的第一个节点。叶子节点（没有后续）和单链节点（只有一条路）没有什么可比较的，评估它们既花时间又没有信息。一个有几百个节点的分组，真正被分析的只有几十到两百多个节点（作者电脑上已经完成的分组是 67 到 239 个）**[已运行 / ran]**。
+
+`branch_nodes()` (L269-273) picks only two kinds of nodes: branch points with two or more live children, and the first node after a "laid out starting position". Leaves (nothing after them) and nodes on a single chain (only one road) have nothing to compare, so evaluating them costs time and carries no information. A group with several hundred nodes really gets only some tens to two hundred and some nodes analysed (the finished groups on the owner's computer have 67 to 239) **[ran]**.
+
+**为什么只搜一个区域 / Why a region。** 如果让 KataGo 在全盘搜索，它经常会说"最好的一手是去别处下一个大场"，对研究这个角上的定式毫无用处；周围的棋子还会让结论随外面的情况摇摆。所以 `region()`（L189-218）先算出这个分组所有着法（加上起始局面里的子）的 x 坐标和 y 坐标的第 3% 到第 97% 分位，再向外扩 2 路，靠近边线（小于等于第 4 路）就贴到边上，得到一个矩形。然后 `query()`（L254-262）里的 `allowMoves` 把黑白双方的候选点都限制在这个矩形里，`untilDepth: 40` 表示搜索树的前 40 层都遵守这个限制。结果是：AI 说的"最优"是"只在这个区域里下的最优"，像对朋友说"假设棋盘别处都不许下，你觉得这里怎么走最好"。取分位数而不是最小最大值，是为了让个别跑到很远的着法不要把矩形撑得过大。
+
+If KataGo searched the whole board it would often say "the best move is a big point somewhere else", which is useless for studying this corner, and the surrounding stones would make the conclusion swing with what happens outside. So `region()` (L189-218) computes the 3rd to 97th percentile of the x and y coordinates of all moves of the group (plus the stones of the starting position), widens it by 2 lines, and snaps it to the edge when it is close (the fourth line or less), giving a rectangle. Then `allowMoves` in `query()` (L254-262) restricts the candidates of both Black and White to this rectangle, and `untilDepth: 40` means the first 40 levels of the search tree obey the restriction. The result is that the AI's "best" is "the best when playing only inside this area", like telling a friend "assume nothing may be played elsewhere on the board, where is the best move here". Percentiles instead of the minimum and maximum keep the odd move that wandered far away from stretching the rectangle too much.
+
+**对照实验 / The control run。** 如果这个局面里区域外面有棋子，`analyze()`（L403-408）还会多问一次"去掉区域外的棋子之后"的结果，搜索次数取 `min(VB, 200)`，答案存成 `<节点号>_0`。`merge()` 把两次的最优点比一比，写出"周边子力影响：结论一致/外围子力改变了选择"。这回答的是围棋初学者最容易困惑的问题：周围的子到底有没有影响这个定式的选择。
+
+If there are stones outside the region in this position, `analyze()` (L403-408) asks once more for the result "without the stones outside the region", with `min(VB, 200)` visits, and stores the answer as `<node id>_0`. `merge()` compares the best points of the two runs and writes "influence of the surrounding stones: same conclusion / the outer stones change the choice". This answers the question a Go beginner is most likely to be confused by: do the stones around really change the choice in this joseki.
+
+**视角换算 / Perspective conversion。** KataGo 的配置里写着 `reportAnalysisWinratesAs = BLACK`（`engine-config/analysis.cfg`），所以它报告的所有目差和胜率都是黑方视角：黑棋领先是正数。如果轮到白棋下，"白棋这一手让黑棋领先 3 目"对白棋来说其实是 -3。如果不换算就拿来排名，白棋的最优手会被选成"最差的一手"。`convert()`（L82-91）是全项目唯一翻转正负号的地方（`stm_sign()` 决定符号），换算成"行棋方视角"（stm，side to move）后再保存。更进一步，`detect_report_as()`（L101-124）不相信配置文件，而是启动时先问 KataGo 一个"九子让子局面，白棋走"的问题：黑方这么大优势，如果报告的胜率大于 0.65，就说明确实是黑方视角；小于 0.35 说明是行棋方视角。实测结果优先于配置文件。`treesync.perspective_suspect()` 则是事后的体检：KataGo 的候选是按"对行棋方有多好"排序的，所以换算对了之后第一个候选应该接近最好；如果白棋的节点里第一个候选总是最差，那就是视角错了，文件会被拒绝合并（`analyze()` 末尾返回退出码 3）。
+
+KataGo's configuration says `reportAnalysisWinratesAs = BLACK` (`engine-config/analysis.cfg`), so all the point differences and winrates it reports are from Black's view: Black ahead is positive. If it is White's turn, "this White move leaves Black 3 points ahead" is really -3 for White. Without conversion, ranking by these numbers would pick White's best move as "the worst one". `convert()` (L82-91) is the only place in the whole project that flips signs (`stm_sign()` decides the sign), and it saves everything in the "side to move" perspective (stm). Going further, `detect_report_as()` (L101-124) does not trust the configuration file but first asks KataGo a question at startup, "nine handicap stones, White to move": Black is so far ahead that a reported winrate above 0.65 shows it really is Black's view, and below 0.35 shows it is the side to move's view. What the engine really does beats what the file says. `treesync.perspective_suspect()` is a check afterwards: KataGo orders its candidates by how good they are for the side to move, so after a correct conversion the first candidate should be close to the best, and if in White's nodes the first candidate is always the worst, the perspective is wrong and the file is refused for merging (`analyze()` returns exit code 3 at the end).
+
+**强制评估老师的着法 / Forced evaluation of the teacher's moves。** 老师走的那手棋，AI 的前几名里不一定有，访问次数也可能太少而不可信。如果这时显示"AI 几乎不考虑"，是不公平的，也是用户最反感的。所以第二阶段（L412-437）对每个分叉点的每个老师着法，检查它在主搜索里的访问次数够不够（至少 `max(10, 最大访问次数的 10%)`）；不够就单独问一次"走了这手之后的局面"，因为那时轮到对方，所以把得分取反（`s = -f['score']`），搜索次数 `VF = 100`，结果加上标记 `f: 1`、先验 `p: -1`。如果老师那手落在区域外（脱先、去别处），不评估，评论里写"区域外着法，未评估"。
+
+The move the teacher played is not necessarily among the AI's top choices, and its visit count may be too low to trust. Showing "the AI hardly considers it" at that point would be unfair, and it is what the user disliked most. So the second phase (L412-437) checks, for every teacher move at every branch point, whether it got enough visits in the main search (at least `max(10, 10% of the largest visit count)`); if not, it asks once more about "the position after this move". Because it is then the opponent's turn, the score is negated (`s = -f['score']`), the visits are `VF = 100`, and the result is marked `f: 1` with a prior of `p: -1`. If the teacher's move is outside the region (tenuki, playing elsewhere) it is not evaluated and the comment says "outside the region, not evaluated".
+
+**窗口式发送，以及旧版本为什么会卡死 / Windowed requests, and why the old version hung。** 旧版本（提交 `86d1179` 的 `run()`）先把所有请求一口气写给 KataGo，写完之后才开始读答案。两个进程之间的通道（管道）容量有限：如果答案写满了通道而我们还在写请求，两边就会各等对方，谁也动不了，这叫**死锁**，像两个人各端着一满桶水，都等对方先放下。新版本的 `run_queries()`（L323-358）用一个"窗口"：同一时间最多只有 `window = 8` 个请求在途，每收到一个答案才补发一个。另外 `Engine` 类（L133-184）用单独的线程读答案，这样等待可以超时：900 秒没有任何答案就放弃并报错（`WEIQI_STALL_S`），引擎进程死掉也能立刻发现，而不是永远等下去。**[未核实]** 我能确认的是旧代码的写法和修复提交 `777a03e` 的说明；当时真正卡住的确切原因没有留下日志，所以"管道写满导致死锁"这个因果链是依据代码的推断，没有在真实 KataGo 上复现。
+
+The old version (`run()` in commit `86d1179`) wrote all requests to KataGo in one go and only started reading the answers afterwards. The channel (pipe) between the two processes has a limited capacity: if the answers fill the channel while we are still writing requests, both sides wait for each other and nothing moves. This is a **deadlock**, like two people each holding a full bucket of water and waiting for the other to put theirs down first. The new `run_queries()` (L323-358) uses a "window": at most `window = 8` requests are in flight at any time, and a new one is sent only when an answer has arrived. The `Engine` class (L133-184) also reads answers in a separate thread so the wait can time out: after 900 seconds without any answer it gives up and reports (`WEIQI_STALL_S`), and a dead engine process is noticed at once instead of being waited for for ever. **[Not verified]** What I can confirm is the shape of the old code and the description of the fix commit `777a03e`. The exact cause of the real hang was not logged, so the chain "a full pipe caused the deadlock" is an inference from the code and was not reproduced with a real KataGo.
+
+```mermaid
+sequenceDiagram
+  participant P as analyze2.py
+  participant K as KataGo
+  P->>K: 请求 1 到 8 一起发出 (窗口)
+  K-->>P: 答案 1
+  P->>K: 补发请求 9
+  K-->>P: 答案 2
+  P->>K: 补发请求 10
+```
+
+图：新版本每收到一个答案才补发一个请求，在途请求从不超过 8 个。
+
+Figure: the new version sends a new request only after an answer has arrived, so never more than 8 requests are in flight.
+
+**断点续跑与进度 / Checkpoint and progress。** 分析一个分组要几十分钟，进程可能被杀掉。`run_queries()` 每 25 个答案（或每 30 秒）把已有结果写进 `<输出>.part`（`save()`，L389-391，原子写入），下次启动时 `load_part()`（L313-318）只在"同一棵树、同样的搜索次数、同样的视角"时才接着用。`Progress`（L278-310）把进度和预计剩余时间写进 `.progress.log` 和 `.progress.json`，`python wq.py status` 能读到。退出码有明确含义：0 正常、2 树里没有着法、3 分数看起来是黑方视角、4 引擎出错、5 找不到引擎（L362）。
+
+Analysing a group takes tens of minutes and the process can be killed. `run_queries()` writes the results so far into `<output>.part` every 25 answers (or every 30 seconds) (`save()`, L389-391, atomic), and on the next start `load_part()` (L313-318) reuses them only for "the same tree, the same number of visits, the same perspective". `Progress` (L278-310) writes progress and the estimated time left into `.progress.log` and `.progress.json`, which `python wq.py status` can read. The exit codes have meanings: 0 fine, 2 no moves in the tree, 3 the scores look like Black's view, 4 engine failure, 5 engine not found (L362).
+
+**限制 / Limit。** (1) 这些都只用 `tests/fake_katago.py`（一个假的引擎）测过，真实 KataGo 的启动检测、请求窗口和断点从来没有在整条链上被自动测试覆盖 **[未核实]**，只是流水线在作者电脑上真的跑出了结果。(2) 规则固定为日本规则、贴目 6.5，网络固定一个，搜索次数固定 220（主搜索）和 100（老师着法），220 次对区分差 0.1 到 0.3 目的候选来说并不充分，这些小差距应当当作噪声 **[我的判断]**。(3) `detect_report_as()` 的实时检测分不清"白方视角"和"行棋方视角"（让子局面里行棋方就是白方，两种视角给出同样的数字），只能分清黑方视角；项目只使用黑方视角，所以目前不会出事 **[代码阅读，没有测试]**。(4) 有一个已经发现的缺陷：没有 `moves` 的"摆好的起始局面"节点没有告诉 KataGo 谁先走，见 6.3。
+
+(1) All this was tested only with `tests/fake_katago.py` (a fake engine). The startup detection, the request window and the checkpoint with a real KataGo were never covered by an automated test along the whole chain **[not verified]**, it is only that the pipeline really produced results on the owner's computer. (2) The rules are fixed to Japanese rules with komi 6.5, the network is a single one, the visits are fixed at 220 (main search) and 100 (teacher moves), and 220 is not enough to separate candidates that differ by 0.1 to 0.3 points, so those small gaps should be read as noise **[my judgement]**. (3) The live check in `detect_report_as()` cannot tell "White's view" from "side to move's view" (in the handicap position the side to move is White, so both give the same number), it can only recognise Black's view. The project only uses Black's view, so nothing breaks today **[code reading, not tested]**. (4) One defect has been found: a "laid out starting position" node without `moves` does not tell KataGo who moves first, see 6.3.
+
+### 2.7 合并成 SGF / Merging into SGF
+
+**做什么 / What。** `merge(N, A, vids, name, summ, KP)`（`orch2.py` L165-235）把四样东西拼成一个 SGF 文本：变化树 `N`、AI 评估 `A`、转写文字、要点笔记 `KP`。SGF 文件长什么样，第 1.4 节已经看过一个真实输出。这里讲它的几个关键步骤。
+
+`merge(N, A, vids, name, summ, KP)` (`orch2.py` L165-235) puts four things together into one SGF text: the variation tree `N`, the AI evaluation `A`, the transcript text and the key point notes `KP`. Section 1.4 already showed a real output. Here are the key steps.
+
+**把话分给节点 / Giving the words to nodes。** L167-177：把变化树里所有活节点的时间段按开始时间排好；对转写里的每一句话，取"开始时间加 0.3 秒"，找到那一刻棋盘上显示的节点，这句话就属于它。所以老师在某个局面上说的话，会出现在那个局面对应的节点里，一个节点可以收到好几句话，它们按时间顺序连起来，通过错别字词典（`fix()`，见 2.9），并记下第一句的时间做成 `@视频序号|分:秒` 链接。
+
+L167-177: it sorts the time spans of all live nodes of the tree by start time. For every sentence of the transcript it takes "start time plus 0.3 seconds", finds the node that was on the board at that moment, and the sentence belongs to it. So what the teacher says over a position ends up in the node of that position, a node can receive several sentences, they are joined in time order, pass through the typo dictionary (`fix()`, see 2.9), and the time of the first one is recorded as an `@video number|minutes:seconds` link.
+
+**评论里的几个部分 / The sections of a comment。** 每个节点的 `C[]` 评论由下面这些以"【】"开头的段落按顺序拼成，查看器按段落切成不同颜色的卡片（3.8）：
+
+The `C[]` comment of each node is joined from the following sections that start with "【】", and the viewer cuts them into cards of different colours (3.8):
+
+| 段落 / Section | 内容 / Content | 来源 / Source |
+|---|---|---|
+| `【核心结论】`等整组概述 / the group summary | 根节点上的一段概述，可选 / An optional summary on the root | `summary_<分组>.md`（流水线之外）/ outside the pipeline |
+| `【起手局面】` | 摆好的起始局面里有哪些子 / The stones of a laid out starting position | `merge()` |
+| `【老师讲解 @v\|m:ss】` | 老师当时说的话（转写，已改错别字）/ What the teacher said (transcript, typos fixed) | `t.json` + `fix()` |
+| `【要点与考量】` | 一句话要点 / A one line key point | `kp_<分组>.json` |
+| `【AI局部评估】` | 候选、最优变化、老师的每一手比最优差几目 / Candidates, best line, how much worse each teacher move is | `a2.json`，`ai()` L187-206 |
+| `【周边子力影响】` | 去掉外围子力后结论是否变化 / Whether the conclusion changes without the outer stones | `a2.json` 里的 `_0` 条目 / the `_0` entries |
+
+`ai()`（L187-206）还做两件事。第一，筛选候选：保留访问次数不少于 `max(5, 最大访问次数的 8%)` 的候选，以及强制评估过的老师着法，其余的当作 KataGo 没认真看过，不展示；"局部最优"是筛选之后得分最高的那个，每个候选显示比它差几目。第二，生成 `AN` 属性：最多 10 个候选，每个是 `位置:目差:先验:胜率%:访问次数:变化`（含义见 1.4 的表）。
+
+`ai()` (L187-206) does two more things. First, it filters the candidates: it keeps those with at least `max(5, 8% of the largest visit count)` visits, and the teacher moves that were evaluated by force, and treats the rest as never seriously looked at by KataGo and does not show them. The "local best" is the one with the highest score after filtering, and every candidate shows how much worse than it is. Second, it generates the `AN` property: up to 10 candidates, each `point:loss:prior:winrate%:visits:line` (meaning in the table of 1.4).
+
+**其他的 SGF 属性 / Other SGF properties。** `PL[B]` 或 `PL[W]` 写出"轮到谁下"，来自分析里记录的 `turn`（L216），查看器画候选点的颜色就靠它。根节点有 `GN`（分组名）、`PC`（来源和视频的 BV 号）、`SZ[19]`、`KM[6.5]`、`CA[UTF-8]`、`FF[4]`，以及署名三件套 `AP`（应用和版本）、`CP`（版权和许可说明）、`SO`（来源网址），由 `credit_props()`（L161-164）生成，这样棋谱被拷走以后署名也跟着走。文字里的 `]` 和 `\` 都要加反斜杠转义（`esc()`，L154），否则会弄坏 SGF。`clean_cands()`（L155-156）会扔掉"pass"这样不是棋盘坐标的候选。变化树的子节点超过一个时写成括号包起来的多个变化，只有一个时直接接在后面（L232-234）。
+
+`PL[B]` or `PL[W]` says whose turn it is, taken from the `turn` recorded in the analysis (L216), and the viewer's candidate colours depend on it. The root has `GN` (group name), `PC` (source and the BV numbers of the videos), `SZ[19]`, `KM[6.5]`, `CA[UTF-8]`, `FF[4]`, and the credit trio `AP` (application and version), `CP` (copyright and license note) and `SO` (source URL), produced by `credit_props()` (L161-164), so the credit travels with the game record when it is copied. A `]` and a `\` inside text must be escaped with a backslash (`esc()`, L154), otherwise they break the SGF. `clean_cands()` (L155-156) throws away candidates such as "pass" that are not board coordinates. When a node has more than one child they are written as several variations in brackets, with a single child it simply follows (L232-234).
+
+**限制 / Limit。** 话是按"这句话开始时棋盘上是哪个局面"来分配的，老师"边说边下"时有一点时间错位；`AN` 和评论里的数字是四舍五入到 0.1 目、胜率到整数百分比的，足够显示，但不适合再做精细计算。
+
+Words are assigned by "which position was on the board when the sentence began", so when the teacher "talks while playing" there is a little time misalignment. The numbers in `AN` and in the comment are rounded to 0.1 points and whole percentages, enough for display but not for further fine calculation.
+
+### 2.8 要点笔记与指纹 / Key point notes and fingerprints
+
+**为什么需要指纹 / Why fingerprints。** 这是一个吃过亏的设计。AI 评估（`a2.json`）和要点笔记（`kp_<分组>.json`）都是"按节点编号"存的。但节点编号只是 `build_tree()` 建树时的顺序，是偶然的：如果同一个分组后来又下载好了一个视频，重建的树会有不同的编号，旧的评估和笔记就会悄悄贴到错误的着法上，而且没有任何报错。解决办法是让每个派生文件带上"它是从哪棵树来的"。
+
+This design was paid for with a mistake. The AI evaluation (`a2.json`) and the key point notes (`kp_<group>.json`) are both stored "by node number". But node numbers are only the order in which `build_tree()` happened to build the tree, an accident: if another video of the same group finishes downloading later, the rebuilt tree has different numbers, and the old evaluation and notes silently stick to the wrong moves with no error at all. The remedy is to let every derived file carry "which tree it came from".
+
+**怎么做 / How。** `tree_fingerprint(N)`（`pipeline/treesync.py` L22-30）把树的结构（编号、父节点、着法、子节点、是否删除、是否摆好的起始局面、局面）序列化后取 SHA-1 的前 16 位，这就是"指纹"。时间段 `v` 故意不算进去：时间稍微偏一点不会让评估作废，如果算进去就会让显卡白白重算。`a2.json` 里有一个 `_meta` 块（`make_meta()` L45-50），记着指纹、视角（`stm`）、是否完整、搜索次数、区域、引擎的汇报方式等。合并前 `check_analysis()`（L120-149）给出一个状态：
+
+`tree_fingerprint(N)` (`pipeline/treesync.py` L22-30) serialises the structure of the tree (numbers, parents, moves, children, whether deleted, whether a laid out starting position, the position) and takes the first 16 characters of its SHA-1, and that is the "fingerprint". The time spans `v` are deliberately left out: a small shift in time does not invalidate an evaluation, and counting them would make the graphics card recompute for nothing. `a2.json` has a `_meta` block (`make_meta()` L45-50) with the fingerprint, the perspective (`stm`), whether it is complete, the visits, the region, how the engine reports, and so on. Before merging, `check_analysis()` (L120-149) returns a status:
+
+| 状态 / Status | 含义 / Meaning | 怎么处理 / What happens |
+|---|---|---|
+| `ok` | 指纹对得上 / The fingerprint matches | 可以合并 / may be merged |
+| `legacy` | 没有指纹，但通过了结构检查（编号都存在、轮到谁与上一手相反、候选不在已有棋子上）/ No fingerprint but passes the structural check | 可以合并，同时警告，可用 `wq.py stamp` 补指纹 / merged with a warning, `wq.py stamp` adds the fingerprint |
+| `stale` | 它是为另一棵树做的 / Made for another tree | 旧文件改名 `.stale` 并重新分析，绝不合并 / the old file is renamed `.stale` and the analysis is rerun, never merged |
+| `incomplete` | 一次被限制或中断的运行 / A limited or aborted run | 同上 / same |
+| `bad_persp` | 分数看起来不是行棋方视角 / The scores do not look like the side to move's view | 同上 / same |
+| `missing` | 没有评估 / No evaluation | 如果设置了 `NOAN` 就不带 AI 评估 / without AI evaluation if `NOAN` is set |
+
+**要点笔记如何"跟着位置走" / How notes "follow the position"。** 要点由一个大语言模型（一个 AI 助手，不是 Whisper）写成：流水线先把"老师的话至少 60 个字的节点"导出成 `kpin_<分组>.json`（每项有节点号、从根到这里的着法路径、文字），助手读了写出 `kp_<分组>.json`（节点号对一句话要点）。这个助手不在本仓库的代码里，是流水线之外的一个手工或半自动步骤 **[仓库里没有调用它的脚本]**。因为助手只见过当时那一版的树，所以笔记也要防编号漂移。办法是：`pos_key(n)`（L33-35）对"局面加上最后一手是谁走的"取哈希，作为跨重建的身份；`kp_ident()` 把整棵树的指纹和每个节点的身份都记下来，随着笔记存成 `_meta`。重建后如果指纹变了，`check_kp()`（L159-190）按"身份"把旧笔记搬到新树对应的节点上（状态 `remapped`），搬不过去的才丢弃（`stale`）。
+
+The key points are written by a large language model (an AI assistant, not Whisper). The pipeline first exports "nodes where the teacher said at least 60 characters" as `kpin_<group>.json` (each item has the node number, the move path from the root to it, and the text), the helper reads it and writes `kp_<group>.json` (node number to a one sentence key point). This helper is not in the repository code, it is a manual or semi automatic step outside the pipeline **[the repository has no script that calls it]**. Because the helper only saw the tree as it was then, the notes also need protection against number drift. The way: `pos_key(n)` (L33-35) hashes "the position plus who played the last move" as an identity that survives a rebuild, and `kp_ident()` records the fingerprint of the whole tree and the identity of every node, stored with the notes as `_meta`. If the fingerprint has changed after a rebuild, `check_kp()` (L159-190) moves the old notes onto the matching nodes of the new tree by "identity" (status `remapped`), and only those that cannot be moved are dropped (`stale`).
+
+**限制 / Limit。** **[已运行 / ran]** 作者电脑上有两个分组（`星位-点三三` 和 `星位-小飞挂-小飞守角与托角连扳`）的要点笔记还是 `legacy`（没有指纹，按"大部分编号对得上"放行），建议用 `python wq.py stamp "<分组>"` 补上指纹，前提是你确认这些笔记确实属于当前这棵树。
+
+On the owner's computer the key point notes of two groups (`星位-点三三` and `星位-小飞挂-小飞守角与托角连扳`) are still `legacy` (no fingerprint, let through because "most numbers fit"). It is advisable to add the fingerprint with `python wq.py stamp "<group>"`, provided you are sure these notes really belong to the current tree.
+
+### 2.9 错别字词典 / The typo dictionary
+
+**做什么 / What。** `pipeline/fixtext.py` 把转写和要点里的已知错字改正。规则存在两处：代码里的 `BUILTIN`（25 条左右的内置规则，L26-30）和 `pipeline/fixdict.json`（303 对"错词、正词"，用 `mkfix.py` 维护），再加上 `KEEP`（几个"必须原样保留"的正确词，L33）。合并时 `fix()`（`orch2.py` L151-152）把规则套到每个节点的老师讲解和要点上。我运行了一次真实的 `Fixer`，输入 `黑旗一间低夹，白旗搬了一下，拖鲜`，输出 `黑棋一间低夹，白棋扳了一下，脱先` **[已运行 / ran]**，词典全部合起来有 331 条规则，环检查通过 **[已运行 / ran]**。
+
+`pipeline/fixtext.py` corrects the known mistakes in the transcript and the key points. The rules live in two places: `BUILTIN` in the code (about 25 built in rules, L26-30) and `pipeline/fixdict.json` (303 pairs of "wrong word, right word", maintained with `mkfix.py`), plus `KEEP` (a few correct words that must stay as they are, L33). During merging `fix()` (`orch2.py` L151-152) applies the rules to the teacher commentary and the key point of every node. I ran the real `Fixer` once with the input `黑旗一间低夹，白旗搬了一下，拖鲜` and the output was `黑棋一间低夹，白棋扳了一下，脱先` **[ran]**, and all rules together are 331, and the cycle check passes **[ran]**.
+
+**为什么不是简单的"查找替换" / Why not a plain find and replace。** 早先的做法是一条规则接一条规则地 `str.replace`，它出过两种事故：短规则命中了长的正确词（规则"黑棋力→黑棋立"把"黑棋力量"改成了"黑棋立量"），一条规则的输出又被另一条规则改了一遍（"隐争→隐征→引征"），所以把已经改过的文字再改一遍结果就不同。现在 `Fixer`（L50-77）的做法是：所有规则编进一个正则，**最长的规则优先**，所以不管规则在文件里的顺序，在每个位置总是最长的匹配赢；**重复到稳定为止**（最多 8 轮），因为词典里有些规则是互相接力的（"三天低→三间低"之后"低家→低夹"，合起来才把"三天低家"改对），稳定后再改一遍结果不变；**受保护的词**（`KEEP`，例如"拖延"，因为有一条单字规则"拖→托"）写成"自己改成自己"的规则，靠最长优先挡住短规则；每次还统计触发了哪些规则（`fixlog_<分组>.json`），让奇怪的改动看得见。`check_rules()`（L80-94）会检查词典里有没有永远不会稳定的循环。
+
+The earlier approach applied the rules one after another with `str.replace`, which caused two kinds of accidents: a short rule hit a longer correct word (the rule "黑棋力 to 黑棋立" turned "黑棋力量" into "黑棋立量"), and the output of one rule was changed again by another rule ("隐争 to 隐征 to 引征"), so fixing already fixed text gave a different result. The `Fixer` (L50-77) now works like this: all rules are compiled into one regular expression with the **longest rule first**, so whatever the order in the file, the longest match wins at every position; it **repeats until stable** (at most 8 passes), because some dictionary rules feed each other ("三天低 to 三间低", then "低家 to 低夹", together turning "三天低家" into the right words), and once stable a further pass changes nothing; **protected words** (`KEEP`, for example "拖延", because a single character rule "拖 to 托" exists) are written as "rewrite to itself" rules and the longest first order shields them from the short rule; and it counts which rules fired (`fixlog_<group>.json`), so a surprising change is visible. `check_rules()` (L80-94) checks the dictionary for cycles that would never settle.
+
+**怎么维护 / How to maintain it。** `python mkfix.py check` 检查词典；`python mkfix.py add 错词=正词` 加规则（会先检查、并留一个 `.bak` 备份）；`python mkfix.py apply 文件` 试着对一段文字运行并显示触发了哪些规则，不修改文件。**改了词典之后，必须运行 `regen.py` 重建 SGF**，因为文字是在合并时就改好写进 SGF 的，不是查看器显示时才改。
+
+`python mkfix.py check` checks the dictionary, `python mkfix.py add wrong=right` adds a rule (after checking it, and leaving a `.bak` backup), and `python mkfix.py apply file` tries it on a text and shows which rules fired without changing the file. **After editing the dictionary you must run `regen.py` to rebuild the SGFs**, because the text is corrected at merge time and written into the SGF, not corrected when the viewer displays it.
+
+**限制 / Limit。** 词典只知道"见过的错"，不理解上下文：所有单字规则（例如 `搬→扳`、`拖→托`、`斑→扳`）都会在正确的词里误伤，目前只有三个词被保护。`python mkfix.py check` 会列出单字规则供你复查。词典是在真实转写文本上一点点积累起来的（`docs/PREMORTEM.md` 在 14784 条真实文本上检查过它是否稳定），但每条规则本身是否都正确，没有被系统验证过 **[未核实]**。
+
+The dictionary only knows "mistakes it has seen" and does not understand context: every single character rule (for example `搬 to 扳`, `拖 to 托`, `斑 to 扳`) can hurt a correct word, and only three words are protected today. `python mkfix.py check` lists the single character rules for you to review. The dictionary grew bit by bit on real transcript text (`docs/PREMORTEM.md` checked its stability on 14784 real texts), but whether every single rule is correct has not been verified systematically **[not verified]**.
+
+### 2.10 护栏 / Guards
+
+流水线里大约一半的代码是护栏。下表按"防什么"列出，每一行都对应一次真实或预想的事故（完整的事前复盘在 `docs/PREMORTEM.md`）：
+
+About half of the pipeline's code is guards. The table lists them by "what they prevent", and every row corresponds to a real or anticipated incident (the full pre-mortem is in `docs/PREMORTEM.md`):
+
+| 护栏 / Guard | 防什么 / What it prevents | 在哪里 / Where |
+|---|---|---|
+| SGF 校验 `validate()` / SGF validation | 括号不配对、坐标超出棋盘、`PL` 不是 B 或 W、`AN` 格式错误或目差为正 / Unbalanced brackets, coordinates off the board, `PL` not B or W, a malformed `AN` or a positive loss | `pipeline/sgfcheck.py` L83-131 |
+| "不能更差"比较 `worse()` / "Never poorer" comparison | 新 SGF 的节点数、带 AI 的节点数、要点数比旧文件少（老师讲解允许少 20%）就拒绝覆盖 / Refuse to replace when the new SGF has fewer nodes, AI nodes or notes than the old one (teacher text may drop 20%) | `sgfcheck.py` L134-155，`orch2.sgf_decision()` L266-276 |
+| 原子写入 / Atomic writes | 被杀、断电时留下写了一半的 json 或 SGF，或查看器读到半个文件 / A half written json or SGF after a kill or power cut, or the viewer reading half a file | `pipeline/wqutil.py` L22-61 |
+| 容错读取 / Tolerant reading | 带 BOM 的文件、被截断的 json；损坏的文件被改名 `.corrupt`，让产生它的阶段重做 / Files with a BOM, truncated json; a damaged file is renamed `.corrupt` so the stage that makes it runs again | `wqutil.read_json()` L64-87 |
+| 单实例锁 / Single instance lock | 同时有两个 orch2 / Two orch2 at once | `wqutil.single_instance()` L208-225 |
+| 指纹与视角检查 / Fingerprint and perspective checks | 评估和笔记贴到错的节点，以及分数视角错 / Evaluation and notes on the wrong nodes, and the wrong score perspective | `pipeline/treesync.py` |
+| 识别与转写自检 / Recognition and transcript self checks | 另一种版式的视频、空转写 / A video with another layout, an empty transcript | `board.assess()`，`tr.check_transcript()` |
+| 计划校验 / Plan validation | `plan.json` 里有不存在的视频、重复或非法的组名 / A video that does not exist, duplicate or illegal group names in `plan.json` | `orch2.validate_plan()` L239-255 |
+| 统一 UTF-8 / UTF-8 everywhere | Windows 控制台（cp936）乱码、默认编码出错 / Garbled cp936 consoles and wrong default encodings | `wqutil.setup_stdio()`、`utf8_env()` |
+| 状态与日志 / Status and logs | "不知道它做了什么"：每个分组一份 `status_<分组>.json` / "No idea what it did": one `status_<group>.json` per group | `stageB()` L342-343 |
+
+`perspective_suspect()` 的检查值得多说一句，因为它是用真实数据校准过的：对白棋的节点，正确换算的文件里第一个候选接近最好的比例是约 100%，而旧的黑方视角文件只有 13% 到 22%，所以阈值取 50%（`docs/PREMORTEM.md` 第 11 行）。
+
+The check in `perspective_suspect()` deserves one more sentence because it was calibrated with real data: for White's nodes, the share of nodes whose first candidate is close to the best was about 100% in correctly converted files and only 13% to 22% in the old Black perspective files, so the threshold is 50% (`docs/PREMORTEM.md` row 11).
+
+**限制 / Limit。** 护栏只能挡住"明显坏"的东西：一个 SGF 即使通过了校验，里面的棋也可能读错了（识别错）、话可能听错了（转写错）。它们保证的是"不比以前差、不写坏文件、不贴错节点"，不保证内容正确。
+
+Guards can only stop what is "obviously bad": an SGF that passes validation can still contain misread stones (recognition errors) and misheard words (transcription errors). What they guarantee is "not poorer than before, no damaged files, no notes on the wrong node", not that the content is correct.
+
+### 2.11 重建与小工具 / Regeneration and helper tools
+
+| 工具 / Tool | 作用 / What it does | 要点 / Notes |
+|---|---|---|
+| `pipeline/regen.py` | 不下载、不转写、不跑 KataGo，只用缓存重建每个分组的 SGF，例如改了词典之后 / Rebuild the SGF of every group from the cache only, without downloading, transcribing or running KataGo, for example after editing the dictionary | `--dry-run` 只报告不写，`--only 名字` 只重建某组，`--analyze` 才允许跑 KataGo，`--force` 才允许覆盖更好的文件 / `--dry-run` reports only, `--only name` rebuilds one group, `--analyze` is the only way to allow KataGo, `--force` the only way to overwrite a richer file |
+| `pipeline/wq.py` | 看和确认，从不启动重活 / Look and bless, never starts heavy work | `status` 每组一行状态加失败视频和运行中的分析；`check 分组` 对比树和评估、笔记；`stamp 分组` 补指纹；`validate 路径` 校验 SGF；`fix-check` 检查词典 / `status` one line per group plus failed videos and running analyses; `check group` compares tree, evaluation and notes; `stamp group` adds fingerprints; `validate path` checks SGFs; `fix-check` checks the dictionary |
+| `pipeline/mkfix.py` | 词典维护 / Dictionary maintenance | `check`、`normalize`、`add`、`apply` |
+| `pipeline/serve.py` | 在 127.0.0.1:8765 起一个本地服务器，响应头带 `Cache-Control: no-store`，保证看到的是最新页面和最新的 `library.js` / A local server on 127.0.0.1:8765 whose responses carry `Cache-Control: no-store`, so you always see the newest page and `library.js` | 双击 `index.html` 也能用，服务器只在浏览器限制 `file://` 时需要 / Double clicking `index.html` also works, the server is only needed when the browser restricts `file://` |
+| `tools/build.ps1` | 为 `plan.json` 里还没有 SGF 的分组生成占位骨架（不会覆盖已有内容），再把全部 SGF 打包成 `data/library.js` / Makes placeholder skeletons for groups of `plan.json` that have no SGF yet (never overwriting content), then packs all SGFs into `data/library.js` | 这是流水线和查看器之间唯一的"交接"，忘了运行它，新的 SGF 就不会出现在页面里 / This is the only "hand over" between pipeline and viewer, if you forget it new SGFs do not appear in the page |
+| `tools/sync_pipeline.ps1` | 把工作目录里的脚本拷进仓库的 `pipeline/` / Copies the scripts of the work folder into the repo's `pipeline/` | 只拷两边都有的 `.py` 和 `fixdict.json` 以及 `kp_*.json`；不会覆盖更新的仓库文件；`-DryRun` 先看 / Only copies `.py` files and `fixdict.json` that exist in both, plus `kp_*.json`; never over a newer repo file; `-DryRun` first |
+| `tools/fetch_playlists.ps1` | 向 B 站的合集接口取视频清单，生成 `index.json` / Fetches the video list from Bilibili's playlist endpoint and writes `index.json` | 加新作者时用 / Used when adding a new author |
+| `tools/local_analyze.ps1` | 手工对一个局面在指定矩形里问一次 KataGo / Asks KataGo about one position inside a given rectangle by hand | 调试用 / For debugging |
+| `remote/analyze_remote.py` 等 / and the rest of `remote/` | 在更强的远程显卡上批量跑同样的分析，输出格式与 `a2.json` 相同，可以直接放回工作目录 / Runs the same analysis in batch on a stronger remote GPU, with the same output format as `a2.json`, so it can be put straight back into the work folder | 没有在真实云平台上跑过 / Never run on a real cloud platform **[未核实 / not verified]** |
