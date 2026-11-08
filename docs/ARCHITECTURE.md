@@ -1138,3 +1138,137 @@ Go terms are hard for speech recognition: homophones (棋 and 旗, 扳 and 搬, 
 **棋盘识别 / Board recognition。** 它只认 1134 乘 720 的固定版式（2.4），其余版式整段视频被拒绝，这是当前最大的覆盖面缺口：套路研究和避雷的大多数视频因此没有 SGF。即使版式对，也有这些弱点：只读 18 列；靠亮度阈值读棋子，如果录屏的配色、棋子样式变了就会失灵（自检会拒绝，但不会自适应）；老师在棋盘上画的标记、数字和鼠标指针可能被读成棋子（靠 0.5 秒的闪烁修剪挡住一部分）；变化树不记走棋顺序，转置会被合并（2.5）。更好的做法（还没做）：为每种版式记录一套几何参数，或者改用能适应缩放的识别方法，并且把识别结果和视频逐帧对一遍做回归测试。
 
 It only accepts the fixed layout of 1134 by 720 (2.4), and a video with any other layout is refused as a whole, which is currently the biggest gap in coverage: most videos of 套路研究 and 避雷 therefore have no SGF. Even with the right layout there are weaknesses: only 18 columns are read; stones are read by brightness thresholds, which fail if the colours or stone style of the screen recording change (the self check refuses but does not adapt); marks, numbers and the mouse pointer the teacher puts on the board can be read as stones (the 0.5 second flicker pruning stops some); the tree does not record the move order and transpositions are merged (2.5). Better approaches (not done): record a set of geometry parameters for every layout, or switch to a recognition method that adapts to scaling, and compare the recognition with the video frame by frame as a regression test.
+
+## 7. v1.0 就绪清单 / v1.0 readiness checklist
+
+这是一份给你的清单：发布 v1.0 之前，下面每一项都应该为真。"现在"一栏是 2026-11-08 的状态。版本号方面，你自己定的规则是：只在处理完一大批视频时才升 0.x，不要频繁发 v0.x；等老师的全部视频都做完、有 HTML 也有 SGF 之后，才考虑 v1.x（`CHANGELOG.md` 里已有的标签是 `v0.1`，之后用三段式，例如 `v0.2.0`、`v1.0.0`）。
+
+This is a checklist for you: before releasing v1.0 every item below should be true. The "now" column is the state on 2026-11-08. On version numbers, the rule you set yourself is: bump 0.x only after a big batch of videos, do not spam v0.x releases, and only consider v1.x once all of the teacher's videos are done with both HTML and SGF (the existing tag in `CHANGELOG.md` is `v0.1`, and later versions use three numbers such as `v0.2.0` and `v1.0.0`).
+
+| 项目 / Item | 现在 / Now | 做到什么算完成 / Done when |
+|---|---|---|
+| 1. 全部视频处理完 / Every video processed | 94 个分组里 47 个有内容；套路研究和避雷的大多数视频因版式被拒绝；高目、总览等 3 个视频超出 `WEIQI_MAX_IDX` / 47 of 94 groups have content; most videos of the other two series were refused for their layout; 3 videos (高目, 总览 and so on) are above `WEIQI_MAX_IDX` | 每个分组都有一个由其全部视频合成的有效 SGF，或者你明确决定放弃某些；识别器能处理其他版式，或有文档说明为什么不处理；`failed_videos.json` 里没有需要的视频 / Every group has a valid SGF built from all its videos, or you explicitly decide to drop some; the recogniser handles the other layouts or a document says why not; no needed video is left in `failed_videos.json` |
+| 2. 每个分组都有 AI 评估 / AI evaluation for every group | 定式大全 15/31；其余两个系列没有；起始局面行棋方缺陷（6.3 A）没修 / 15 of 31 in 定式大全, none in the other series; the starting position defect (6.3 A) is not fixed | 缺陷 A 修好并有测试；所有有分叉点的分组 `wq.py status` 显示 `analysis ok`；受影响的分组重新分析；在浏览器里抽查白先和黑先的节点，核对候选点颜色 / Defect A fixed with a test; every group with branch points shows `analysis ok` in `wq.py status`; the affected groups analysed again; White to move and Black to move nodes spot checked in the browser, candidate colours verified |
+| 3. 每个分组都有要点笔记 / Key notes for every group | 29 个有内容的分组都有要点笔记，其中 2 个是 `legacy`（没有指纹）/ all 29 groups with content have notes, and 2 of them are `legacy` (no fingerprint) | 状态为 `ok`（已盖指纹），`notes/wanted` 不低于 50% / Status `ok` (fingerprint stamped), `notes/wanted` at least 50% |
+| 4. 错别字抽查 / Typo review | 词典 303 条；没有人系统核对过全部文本 / 303 dictionary rules; nobody has checked all the text systematically | 每个分组抽样，由懂围棋的人对照视频核对，新错字进词典，`regen` 后再抽一次 / Sample every group, have someone who knows Go check against the video, put new typos into the dictionary, sample again after `regen` |
+| 5. 私有数据流定下来 / The private data flow decided | PR 16 未合并，三件事等你决定 / PR 16 is unmerged, three things wait for your decision | 合并并跑通同步脚本；决定是否清理公开历史、切换后流水线输出放哪里、本地查看器怎样读私有数据；公开发布的数据里没有讲解正文（`strip_commentary.py --check`）/ Merge it and get the sync script working; decide whether to clean the public history, where the pipeline writes after the cutover, how the local viewer reads private data; no commentary body in the data published publicly (`strip_commentary.py --check`) |
+| 6. 桌面用户测试 / Desktop user testing | 只在内置浏览器窗格里看过 / Only seen in a built in browser pane | 你本人在常用浏览器里走完一遍：随机打开十几个节点（黑先和白先都要）对照视频、悬停预览、算力开关（缓存模式）、做一轮训练并导出再导入进度 / You walk through it in your usual browsers: open a dozen random nodes (both Black and White to move) against the video, hover previews, the compute switch (cache mode), one quiz session with export and import of progress |
+| 7. 手机真机测试 / Real phone testing | 从未在真机上试过 / Never tried on a real device | iOS Safari 和 Android Chrome 上：长按预览、训练的两次点击答题、添加到主屏幕、离线打开、更新提示 / On iOS Safari and Android Chrome: long press preview, the two tap answer in quiz, add to home screen, open offline, the update prompt |
+| 8. 引擎面板连真实 KataGo / The engine panel with a real KataGo | 从未连过 / Never connected | 本机真实 KataGo 上走完：连接测试、流式推演、暂停、停止、换网络，并运行 `remote/selftest.py`；确认没有视角错误 / Walk through it on a real local KataGo: connection test, streaming, pause, stop, switching networks, and run `remote/selftest.py`; confirm there is no perspective error |
+| 9. 稳定性 / Stability | 流水线长时间运行过，但没有一次"从头到尾不用人工干预"的完整运行记录 / The pipeline has run for long, but there is no record of a complete run "from start to end without manual intervention" | 一次完整无人值守运行：没有被拒绝写入的 SGF（`status_*.json`）、没有需要的视频失败；全部测试通过；`check_repo.py` 0 个错误 / One complete unattended run: no SGF refused for writing (`status_*.json`), no needed video failed; all tests pass; `check_repo.py` shows 0 errors |
+| 10. 文档 / Documents | `README.md` 过时（6.3 B）；`CHANGELOG.md` 的"未发布"部分没有跟上最近的合并 / `README.md` is out of date (6.3 B); the "Unreleased" part of `CHANGELOG.md` has not caught up with the recent merges | README 的现状表和"即将到来"更新；CHANGELOG 补全；这份指南更新提交号和行号；所有文档过 `check_bilingual.py` / README's status table and "Upcoming" section updated; CHANGELOG completed; this guide updated with the commit and line numbers; every document passes `check_bilingual.py` |
+| 11. 许可证 / License | `LICENSE`、`LICENSE-DATA.txt`、`NOTICE.md` 都在 `develop` 上 / `LICENSE`, `LICENSE-DATA.txt` and `NOTICE.md` are all on `develop` | 确认公开发布的数据采用 CC BY-NC-SA 4.0 且不含老师的讲解正文；署名三处（SGF、README、页脚）都在；第三方软件义务（KataGo 及权重、yt-dlp、faster-whisper 等）按 `docs/LICENSE-ADVICE.md` 第 5 节核对 / Confirm that the data published publicly is under CC BY-NC-SA 4.0 and has no commentary body of the teacher; the credit in all three places (SGF, README, footer) is there; the obligations for third party software (KataGo and weights, yt-dlp, faster-whisper and so on) checked against section 5 of `docs/LICENSE-ADVICE.md` |
+| 12. 发布步骤 / Release steps | 还没开始 / Not started | 见下面的步骤 / See the steps below |
+
+发布步骤（按 `docs/WORKFLOW.md`，我没有执行任何一步）：
+
+Release steps (following `docs/WORKFLOW.md`, I executed none of them):
+
+1. 冻结 `develop`：不再合并新功能，只合并发布前的修复。
+
+   Freeze `develop`: no new features, only fixes before the release.
+
+2. 从 `develop` 切出 `release/v1.0.0`。把 `VERSION` 改成 `1.0.0`，同时升查看器的界面版本：`index.html` 里的 `VIEWER_VER` 和 `sw.js` 里的 `VER` 必须相同（有测试检查），否则用户的服务工作线程缓存不会更新；补全 `CHANGELOG.md`。
+
+   Cut `release/v1.0.0` from `develop`. Change `VERSION` to `1.0.0` and bump the viewer's interface version too: `VIEWER_VER` in `index.html` and `VER` in `sw.js` must be the same (a test checks it), otherwise users' service worker caches are not renewed. Complete `CHANGELOG.md`.
+
+3. 用 `tools/build.ps1` 重新打包 `data/library.js`，然后依次运行：Docker 里的两套测试、`python tools/check_repo.py`、`python tools/check_bilingual.py`。如果公开的数据要去掉讲解正文，用 `tools/strip_commentary.py`（PR 16）并运行它的 `--check`。
+
+   Repack `data/library.js` with `tools/build.ps1`, then run in turn: both test suites in Docker, `python tools/check_repo.py` and `python tools/check_bilingual.py`. If the public data has to lose the commentary body, use `tools/strip_commentary.py` (PR 16) and run its `--check`.
+
+4. 把 `release/v1.0.0` 以合并提交的方式合进 `main`，打标签 `v1.0.0`，再把 `main` 合回 `develop`。合并 `main` 需要你的明确同意。
+
+   Merge `release/v1.0.0` into `main` with a merge commit, tag `v1.0.0`, then merge `main` back into `develop`. Merging `main` needs your explicit approval.
+
+5. 写发布说明（GitHub Release），里面带上署名行（`NOTICE.md` 里有确切措辞）。
+
+   Write the release notes (a GitHub Release) with the credit line in them (the exact wording is in `NOTICE.md`).
+
+6. 托管是另一个决定：`tools/make_site.py` 已经准备好了，但没有开 GitHub Pages，也没有部署；公开站点之前请再读一遍 `docs/MOBILE-AND-HOSTING.md` 里标"未核实"的服务商条款。
+
+   Hosting is a separate decision: `tools/make_site.py` is ready, but GitHub Pages is not enabled and nothing is deployed. Before a public site, read the provider terms marked "not verified" in `docs/MOBILE-AND-HOSTING.md` once more.
+
+## 8. 术语表 / Glossary
+
+按主题分组，每条一句话。围棋词在前。
+
+Grouped by topic, one sentence each. The Go words come first.
+
+| 词 / Term | 解释 / Meaning |
+|---|---|
+| 定式 / Joseki | 角上双方都认可的标准下法 / A standard corner sequence both sides accept |
+| 星位、小目、三三 / Star point, 小目, 三三 | 角上的三个落点（四四、三四、三三）/ Three corner points (4-4, 3-4, 3-3) |
+| 小飞挂、夹击 / Knight's move approach, pincer | 挂角，以及从另一边夹住它 / Approaching a corner stone, and attacking it from the other side |
+| 一间低夹、二间高夹 / One space low pincer, two space high pincer | 夹击子和被夹子之间隔几路，在三路（低）还是四路（高）/ How many spaces between the pincer and the stone, on the third (low) or fourth (high) line |
+| 分叉点 / Branch point | 老师展示了不止一种下法的局面 / A position where the teacher shows more than one continuation |
+| 变化图、变化树 / Variation diagram, variation tree | "如果这样、那样应"的图，以及把它们串成的树 / A diagram of "if this, then that" and the tree chaining them |
+| 提子 / Capture | 把没有气的对方棋子拿掉 / Removing opposing stones that have no liberties |
+| 气 / Liberty | 一块棋周围的空点 / An empty point next to a group of stones |
+| 行棋方 / Side to move | 轮到谁下 / Whose turn it is |
+| 目、目差 / Point, point difference | 棋的计分单位，以及两手棋结果的差距 / The scoring unit, and the gap between the results of two moves |
+| 局部最优 / Local best | 只在讲解区域内比较时最好的一手 / The best move when comparing only inside the teaching area |
+| 候选点 / Candidate | AI 认为值得看的下一手 / A next move the AI finds worth a look |
+| 脱先 / Tenuki | 不应对，去别处下 / Not answering, playing elsewhere |
+| 劫、劫材 / Ko, ko threat | 可以反复提回的局面，以及打劫时逼对方应一手的威胁 / A position where a capture can be taken back repeatedly, and the forcing threat used in a ko fight |
+| 征子、接应子 / Ladder, ladder breaker | 沿对角线连续叫吃的追逐，以及能让被追的一方逃出的子 / A chase by repeated atari along a diagonal, and a stone that lets the chased side escape |
+| SGF | 围棋棋谱的通用文本格式 / The common text format of Go game records |
+| 节点 / Node | 变化树里的一个局面或一手棋 / One position or move of the variation tree |
+| 摆好的起始局面 / Laid out starting position | 视频一开始就摆好的棋子，用 `AB`、`AW` 写，不是一手棋 / Stones already laid out when the video begins, written with `AB` and `AW`, not a move |
+| `AN`、`PL`、`AP`、`CP`、`SO` | 本项目 SGF 里的属性：候选点串、轮到谁、应用、版权、来源 / Properties in this project's SGF: the candidate string, whose turn, application, copyright, source |
+| 转置 / Transposition | 不同走法顺序到达同一局面 / Different move orders reaching the same position |
+| 闪烁修剪 / Flicker pruning | 删掉只出现一瞬的误读局面 / Deleting misread positions that last only an instant |
+| KataGo | 开源的围棋 AI / An open source Go AI |
+| 权重 / Weights | AI 学出来的"经验"文件 / The file of what the AI learned |
+| 访问次数 / Visits | AI 往下推演的次数 / How many times the AI looked ahead |
+| 先验 / Prior | AI 在认真计算之前的第一直觉概率 / The AI's first instinct probability before calculating |
+| 主要变化 PV / Principal variation (PV) | AI 预计的后续最佳着法 / The best continuation the AI expects |
+| 视角 / Perspective | 数字是站在谁的角度看的 / Whose side a number is read from |
+| 强制评估 / Forced evaluation | 对老师走的、AI 访问不足的着法单独再算一次 / Evaluating again, separately, a teacher move that got too few visits |
+| 区域、对照实验 / Region, control run | 只搜的矩形范围，以及去掉区域外棋子的对照搜索 / The rectangle that is searched, and the control search without the outside stones |
+| 窗口（请求窗口）/ Window (request window) | 同一时间最多在途的请求数 / The most requests in flight at one time |
+| 死锁 / Deadlock | 双方互相等待谁也动不了 / Both sides wait for each other and nothing moves |
+| ASR、Whisper / ASR, Whisper | 自动语音识别，及其中的一个模型 / Automatic speech recognition, and one model of it |
+| 下载与音视频工具 / yt-dlp and ffmpeg | 下载视频的工具、处理音视频的工具 / A video downloader, an audio and video tool |
+| 限流（HTTP 567）/ Throttling (HTTP 567) | 网站嫌请求太快而拒绝 / The site refuses because requests come too fast |
+| 退避 / Backoff | 失败后等得越来越久再重试 / Waiting longer and longer before retrying after a failure |
+| 清单（manifest）/ Manifest | 记录失败视频的文件 `failed_videos.json` / The file `failed_videos.json` that records failed videos |
+| 指纹（哈希）/ Fingerprint (hash) | 由内容算出的短编码 / A short code computed from content |
+| 原子写入 / Atomic write | 先写临时文件再整体替换 / Write a temporary file and replace as a whole |
+| 护栏 / Guard | 防止写坏、贴错、覆盖的检查 / A check that prevents damaged, misplaced or overwritten data |
+| 缓存 / Cache | 留在手边的旧副本 / An old copy kept at hand |
+| 服务工作线程、PWA / Service worker, PWA | 浏览器里的后台管家，以及可安装的离线网页应用 / The browser's background steward, and an installable offline web app |
+| NDJSON | 一行一个 JSON 的数据流 / A data stream with one JSON per line |
+| 令牌（token）/ Token | 只有你知道的口令 / A secret only you know |
+| 桥接服务 / Bridge | 在页面和你的 KataGo 之间翻译的小服务 `katago_bridge.py` / The small service `katago_bridge.py` that translates between the page and your KataGo |
+| 莱特纳盒子 / Leitner boxes | 按答对答错调整复习间隔的抽屉式记忆法 / A drawer style memory method that adjusts the revision interval by right and wrong answers |
+| 对称（八种）/ Symmetries (eight) | 棋盘的 4 个旋转和 4 个镜像 / The 4 rotations and 4 mirror images of the board |
+| Docker | 把软件和环境装进标准容器运行 / Runs software and its environment in a standard container |
+| 分支、提交、PR / Branch, commit, PR | 并行的修改线、一次存档、请求合并 / A parallel line of changes, a save point, a request to merge |
+| CI | 自动运行检查的流水线，本项目目前没有 / An automated pipeline that runs checks, this project has none today |
+| DCO | 开发者原产地证书：声明你有权提交这段改动 / Developer Certificate of Origin: a statement that you have the right to submit the change |
+
+## 附录 A 常用命令 / Appendix A: commands
+
+下面是我写这份指南时用过、或读代码得到的命令。路径里的 `D:\...` 是你电脑上的位置，换电脑要改。标了 **[已运行 / ran]** 的是我真的运行过的；其余的我只是读了代码，没有运行，尤其是会写文件或启动重活的那几条。
+
+These are the commands I used while writing this guide or learned from the code. The `D:\...` paths are places on your computer and need changing on another one. The ones marked **[ran]** I really ran; for the rest I only read the code and did not run them, especially the ones that write files or start heavy work.
+
+| 目的 / Purpose | 命令 / Command |
+|---|---|
+| 看流水线状态（只读）/ Pipeline status (read only) | `python pipeline/wq.py status --work D:\tmp\work` **[已运行 / ran]** |
+| 检查一个分组的树、评估、笔记 / Check the tree, evaluation and notes of a group | `python pipeline/wq.py check "分组名"` |
+| 校验 SGF（只读）/ Validate SGFs (read only) | `python pipeline/wq.py validate "data/sgf/**/*.sgf"` |
+| 检查错别字词典 / Check the typo dictionary | `python pipeline/mkfix.py check` |
+| 改了词典后重建 SGF，先试运行 / Rebuild SGFs after a dictionary change, dry run first | `python pipeline/regen.py --dry-run` |
+| 重新打包 `library.js` / Repack `library.js` | `powershell -ExecutionPolicy Bypass -File tools/build.ps1` |
+| 本地无缓存服务器 / Local no-cache server | `python pipeline/serve.py`，然后打开 `http://127.0.0.1:8765/` / then open `http://127.0.0.1:8765/` |
+| 仓库检查 / Repository check | `python tools/check_repo.py` **[已运行 / ran]** |
+| 双语检查 / Bilingual check | `python tools/check_bilingual.py docs/ARCHITECTURE.md` **[已运行 / ran]** |
+| Python 测试，用 Docker / Python tests in Docker | `docker build -t weiqi-pipeline-tests . && docker run --rm weiqi-pipeline-tests` **[已运行 / ran]** |
+| Node 测试，用 Docker / Node tests in Docker | `docker run --rm -v "$PWD:/app:ro" -w /app node:20-alpine node --test tests/` **[已运行 / ran]** |
+| 试界面，不需要 GPU / Try the interface without a GPU | `python remote/katago_bridge.py --fake` |
+| 生成可部署文件夹（不上传）/ Build a deployable folder (no upload) | `python tools/make_site.py --strip-commentary` |
+
+在 Git Bash 里运行 Docker 命令时，先设 `MSYS_NO_PATHCONV=1`，并把挂载路径写成 Windows 路径（`tests/README.md` 里有说明）。流水线本体（`orch2.py`）要在装有显卡驱动、ffmpeg、Whisper 和 KataGo 的那台 Windows 电脑上运行，不在 Docker 里。
+
+When running Docker commands in Git Bash, set `MSYS_NO_PATHCONV=1` first and write the mount as a Windows path (explained in `tests/README.md`). The pipeline itself (`orch2.py`) runs on the Windows computer that has the graphics driver, ffmpeg, Whisper and KataGo, not in Docker.
