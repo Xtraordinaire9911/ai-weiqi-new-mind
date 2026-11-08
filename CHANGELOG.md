@@ -32,7 +32,15 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
   The docs are bilingual, a Chinese paragraph followed by its English counterpart.
 
+- `pipeline/layout.py`:棋盘识别现在对每个视频单独量出网格的位置(19 条格线的偏移和格距,精确到亚像素),不再只认 1134x720 的那一组常量。套路研究(1152 到 1158 宽)和避雷(1028 到 1174 宽)两个系列的视频因此可以识别。烧录进视频的字幕盖住棋盘最下面一行时,字幕的笔画不会再被读成棋子(一颗棋子周围的一圈必须几乎全是棋子的颜色);最后一手的标记是圆圈时也不会漏读棋子。
+
+  `pipeline/layout.py`: board recognition now measures the position of the grid on every video (offset and pitch of the 19 grid lines, to a fraction of a pixel) instead of relying on the one set of constants for 1134x720. The videos of the series 套路研究 (1152 to 1158 px wide) and 避雷 (1028 to 1174 px wide) can be read this way. When a burned in subtitle covers the bottom line of the board, the strokes of the text are no longer read as stones (the band around a stone has to be almost completely stone coloured), and a last move marker shaped like a ring no longer hides the stone.
+
 ### 变更 / Changed
+
+- `pipeline/board.py` 不再因为视频尺寸不是 1134x720 而拒绝它。1134x720 且符合第一种版式的视频照旧使用原来的常量,`b.json` 逐字节不变;其他视频先量出网格再识别。棋盘找不到、不是木色或在画面之间移动的视频仍然会被拒绝并写明原因。
+
+  `pipeline/board.py` no longer rejects a video because its size is not 1134x720. Videos of 1134x720 that fit the first layout keep their old constants and their `b.json` stays byte for byte the same; all other videos get their grid measured first and are read afterwards. A video whose board is not found, not wood coloured or moves between frames is still rejected with a reason.
 
 - `.gitignore` 现在还涵盖视频、音频、网络权重和凭据文件。新增的 `.gitattributes` 让 SGF 文件和 `data/library.js` 保持 LF 换行。
 

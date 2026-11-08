@@ -2,6 +2,7 @@
 
 Frames are synthetic: wood, grid lines and round stones drawn with numpy, so no video and no ffmpeg are needed.
 The thresholds were calibrated on the real lesson videos (grid score 39..65, board visible in 99.6..100% of frames).
+The first layout (1134x720, fixed constants) is tested here; the measured layouts are tested in test_layout.py.
 """
 import json
 import os
@@ -75,21 +76,11 @@ def reasons(tmp_path):
     return json.load(open(str(tmp_path / "b.rej.json"), encoding="utf-8"))["reasons"]
 
 
-def test_another_layout_is_rejected_with_a_reason(tmp_path, capsys):
-    rc, out = run(tmp_path, [make_frame(STONES, X0=260.0)] * 60)
+def test_video_without_a_board_is_rejected(tmp_path, capsys):
+    rc, out = run(tmp_path, [make_frame(wood=(30, 120, 40))] * 60)
     assert rc == 3 and not os.path.exists(out), "no b.json, so no tree is built from garbage"
-    assert any("grid lines do not line up" in r for r in reasons(tmp_path))
+    assert "19x19 grid of lines was found in only 0 of 40" in reasons(tmp_path)[0]
     assert "REJECTED" in capsys.readouterr().err
-
-
-def test_wrong_video_size_is_rejected(tmp_path):
-    rc, _ = run(tmp_path, good_frames(30), size=(1280, 720))
-    assert rc == 3 and "1280x720" in reasons(tmp_path)[0]
-
-
-def test_video_without_a_board_is_rejected(tmp_path):
-    rc, _ = run(tmp_path, [make_frame(wood=(30, 120, 40))] * 60)
-    assert rc == 3 and "only 0% of the frames" in reasons(tmp_path)[0]
 
 
 def test_mostly_non_board_video_is_rejected_but_half_is_not_enough(tmp_path):
