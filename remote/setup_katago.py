@@ -15,10 +15,48 @@ References (checked 2026-11): KataGo v1.18.2 release page https://github.com/lig
   - "Use CUDNN >= 9.8.0. The CUDNN 8.9.7 builds will be a LOT slower when running transformers"
   - "TensorRT versions older than 10 are not supported."
   - v1.18.2 adds tensor-core attention for Turing (RTX 20xx / Tesla T4, sm_75), speeding up Transformer networks by more than 50%.
+  5) checks the downloaded zip against the sha256 published on the release page (table KNOWN_SHA256 below).
 Note: this has not been run on real hardware (the environment it was written in had no GPU); the version combination was picked
-from the official release notes. If something fails, see the "Troubleshooting" section of README.md.
+from the official release notes. The asset names and checksums were read from the release data on 2026-11-08; nothing was downloaded. If something fails, see the "Troubleshooting" section of README.md.
 """
-import argparse, glob, json, os, shutil, subprocess, sys, urllib.request, zipfile
+import argparse, glob, hashlib, json, os, shutil, subprocess, sys, urllib.request, zipfile
+
+# sha256 of the official Linux release zips of KataGo v1.18.2, copied from the GitHub release data on 2026-11-08.
+# A download that does not match is deleted and the run stops: a broken or swapped binary must not be executed.
+# Other versions or builds are not in this table and are only reported as "not verified".
+KNOWN_SHA256 = {
+    'katago-v1.18.2-cuda12.1-cudnn9.8.0-linux-x64.zip': '3e30b486b7bc38287eeead350aa832ff8ca50d1f0c0a83b5409cabf8a3bc9c5d',
+    'katago-v1.18.2-cuda12.5-cudnn9.8.0-linux-x64.zip': '8c39d9ac1053f0e0eff0b0d376fcc2b7503e8caf44020710dda758de53a802f8',
+    'katago-v1.18.2-cuda12.8-cudnn9.8.0-linux-x64.zip': '2cb197fc9bc2050f29112abb5b83cdbad63936cb4605d6e199772aedc9806c02',
+}
+
+
+def sha256_file(path):
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        for chunk in iter(lambda: f.read(1 << 20), b''):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def verify_zip(path, name, enforce=True):
+    """True when the zip matches the published checksum or none is known; on a mismatch the file is removed and False returned."""
+    want = KNOWN_SHA256.get(name)
+    if not want:
+        print('No published checksum known for %s: not verified.' % name)
+        return True
+    got = sha256_file(path)
+    if got == want:
+        print('Checksum of %s matches the release (sha256 %s...)' % (name, got[:16]))
+        return True
+    print('!! Checksum mismatch for %s' % name)
+    print('   expected %s' % want)
+    print('   got      %s' % got)
+    if enforce:
+        os.remove(path)
+        print('   The file was deleted. Try again; if it keeps failing, use another --build or pass --no-verify only if you know why.')
+        return False
+    return True
 
 
 def sh(cmd, env=None):
@@ -68,6 +106,7 @@ def main():
                     help='e.g. cuda12.1-cudnn9.8.0 / cuda12.5-cudnn9.8.0 / cuda12.8-cudnn9.8.0 / cuda13.2-cudnn9.24.0')
     ap.add_argument('--model', default=os.environ.get('KATAGO_MODEL', ''))
     ap.add_argument('--weights-url', default=os.environ.get('WEIGHTS_URL', ''))
+    ap.add_argument('--no-verify', action='store_true', help='do not stop on a checksum mismatch of the KataGo zip (it is still reported)')
     ap.add_argument('--no-pip-libs', action='store_true', help='do not try to pip-install the NVIDIA runtime libraries when libraries are missing')
     a = ap.parse_args()
 
@@ -81,6 +120,8 @@ def main():
         name = 'katago-%s-%s-linux-x64.zip' % (a.ver, a.build)
         z = os.path.join(d, name)
         download('https://github.com/lightvector/KataGo/releases/download/%s/%s' % (a.ver, name), z)
+        if not verify_zip(z, name, enforce=not a.no_verify):
+            sys.exit(1)
         with zipfile.ZipFile(z) as zf:
             zf.extractall(d)
         os.chmod(binary, 0o755)
