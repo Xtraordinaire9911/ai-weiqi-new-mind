@@ -2,6 +2,7 @@
 import os,sys,subprocess,re,threading,time,traceback
 from concurrent.futures import ThreadPoolExecutor
 from treesync import tree_fingerprint,check_analysis,check_kp,kp_ident,USABLE
+from analyze2 import wrong_turns
 import sgfcheck,fixtext
 from collections import Counter
 from wqutil import atomic_write_json,atomic_write_text,read_json,find_ffmpeg,setup_stdio,utf8_env,Log,Manifest,retry_with_backoff,single_instance   # atomic outputs: a kill mid-write must not leave partial files
@@ -200,7 +201,7 @@ def merge(N,A,vids,name,summ='',KP={}):
             m=gtp(N[ch]['mv'][0]);cm=next((x for x in c if x['m']==m),None)
             ls.append('视频变化⟨%s⟩:'%m+(("就是AI局部最优" if cm is best else "比局部最优差%.1f目"%(best['s']-cm['s'])) if cm else "区域外着法(脱先/他处),未评估"))
         b=A.get('%d_0'%k)
-        if b and 'cand' in b and b['cand']:
+        if b and 'cand' in b and b['cand'] and b.get('turn')==a['turn']:   # the control run drops moves outside the region, so it can be for the other side; its best move is then not comparable
             bc=[m for m in b['cand'] if m['v']>=max(5,.08*max(x['v'] for x in b['cand']))] or b['cand'][:1];nb=max(bc,key=lambda m:m['s'])
             ls.append("【周边子力影响】去掉区域外的子力后,局部最优为⟨%s⟩;带着外围子力时为⟨%s⟩"%(nb['m'],best['m'])+(" → 结论一致,外围影响小" if nb['m']==best['m'] else " → 外围子力改变了选择,需结合周边配置判断"))
         return chr(10).join(ls),';'.join("%s:%.1f:%.2f:%d:%d:%s"%(sg_(m['m']),m['s']-best['s'],m['p'],round(m['wr']*100),m['v'],' '.join(m['pv'])) for m in c[:10])
@@ -312,6 +313,8 @@ def stageB(name,idxs,visits=150,force=False,planned=None,dry=False):
         A={}
     elif st=='legacy':log('B WARN',name,msg)
     rep['analysis']={'status':st,'message':msg}
+    bad=wrong_turns(N,A) if st in USABLE else []   # incident 12: a set-up position analysed for the other side would show candidates of the wrong colour
+    if bad:rep['analysis']['wrong_turns']=bad;log('B WARN',name,'analysis of',len(bad),'set-up node entries is for the wrong side to move',bad[:8],'- run wq.py fix-setup-turns')
     # --- key point notes (kp): same rule. A kp file without _meta that is newer than the last kpin dump was written from that dump.
     sp=os.path.join(W,'summary_%s.md'%safe);summ=open(sp,encoding='utf-8').read() if os.path.exists(sp) else ''
     kp=os.path.join(W,'kp_'+safe+'.json');side=os.path.join(W,'kpin_'+safe+'.meta.json')
