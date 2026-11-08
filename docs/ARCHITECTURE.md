@@ -958,3 +958,183 @@ Privacy is designed as "send nothing by default", and an automated test guards i
 - B 站的视频链接只有你点击时才会打开。
 
   The Bilibili video links are only opened when you click them.
+
+## 4. 血的教训 / Lessons learned the hard way
+
+这一节记下项目里已经发生过的事故，每一件都写四样东西：用户看到了什么、根因是什么、怎么修的、修在哪个文件。把它们记下来的目的只有一个：同样的错不再犯第二次。你检查成果时，也可以拿这些当"体检清单"，因为每一条都是用户亲眼抓到过的问题。
+
+This section records the incidents that already happened, each with four things: what the user saw, the root cause, how it was fixed, and in which file. The only purpose of writing them down is not to make the same mistake twice. When you check the results you can also use them as a "health check list", because every one is a problem the user caught with their own eyes.
+
+**事故 1：分数视角错了 / Incident 1: the wrong score perspective。** **现象**：用户抽查节点时发现"最优"选错了，白棋行棋的节点上尤其明显（排名整个是反的，最优手其实是最差的一手），AI 的变化图也不合理。**根因**：KataGo 被配置为用黑方视角汇报（`reportAnalysisWinratesAs = BLACK`），旧代码把换算正负号写在一个循环的中间，并且只是"假设"引擎按配置汇报；白棋行棋时没有取反，排名就整个反了。**修复**：换算集中到唯一的函数 `analyze2.convert()`（L82-91）；启动时用九子让子局面实测引擎的汇报方式（`detect_report_as()`，L101-124）；结果文件的 `_meta` 里记下视角，加载时由 `treesync.perspective_suspect()`（L68-87）再体检一遍；查看器的 `RC.conv()`（`index.html` L323-327）在响应没有声明黑方视角时拒绝；桥接服务强制黑方视角并在每个响应里声明。旧的黑方视角结果文件整批撤下重新分析。**规则**：任何排名和"差几目"都必须先换成行棋方视角。
+
+**What the user saw**: while spot checking nodes the user found that the "best" move was wrong, most clearly on nodes where White is to move (the whole ranking was upside down and the best move was really the worst one), and the AI's variation diagrams made no sense. **Root cause**: KataGo is configured to report from Black's view (`reportAnalysisWinratesAs = BLACK`), the old code put the sign flip in the middle of a loop and only "assumed" the engine reports as configured. With White to move there was no negation, so the whole ranking was upside down. **Fix**: the conversion is concentrated in the single function `analyze2.convert()` (L82-91); at startup the reporting mode is measured with a nine stone handicap position (`detect_report_as()`, L101-124); the result file records the perspective in its `_meta` and `treesync.perspective_suspect()` (L68-87) checks it again on loading; the viewer's `RC.conv()` (`index.html` L323-327) refuses a response that does not declare Black's perspective; the bridge forces Black's perspective and declares it in every response. The old Black perspective result files were withdrawn as a batch and analysed again. **Rule**: every ranking and every "points worse" must first be converted to the side to move's perspective.
+
+**事故 2：棋子颜色画反了 / Incident 2: stone colours drawn the wrong way round。** **现象**：悬停时 AI 变化图里的棋子颜色是反的。**根因**：查看器根据"没有标明谁走"的数据去推断颜色，推错了。**修复**：分析结果里按节点记录 `turn`，合并时写成 SGF 的 `PL[B]` 或 `PL[W]`（`orch2.py` L216）；查看器的 `nextCol()`（L102）按"实时分析声明的行棋方，其次 `PL`，再其次上一手的对方"决定颜色；`pvPlan()` 的变化着法从 `nextCol(cur)` 开始轮流（L127）；老师分支的预览用每个节点自己的 `B` 或 `W`（`bPlan()`，L114）；`sgfcheck.validate()` 要求 `PL` 必须是 B 或 W。**规则**：行棋方必须来自数据里明说的 `PL`，不靠猜。**仍然存在的缺口**：见 6.3，没有着法的起始局面节点的 `PL` 可能是错的。
+
+**What the user saw**: when hovering, the stone colours in the AI variation diagram were reversed. **Root cause**: the viewer inferred colours from data that did not say who moves, and inferred wrongly. **Fix**: the analysis records a `turn` per node and the merge writes it as the SGF `PL[B]` or `PL[W]` (`orch2.py` L216); the viewer's `nextCol()` (L102) decides the colour by "the side to move declared by the live analysis, then `PL`, then the opponent of the last move"; the variation moves of `pvPlan()` alternate from `nextCol(cur)` (L127); the preview of a teacher branch uses each node's own `B` or `W` (`bPlan()`, L114); `sgfcheck.validate()` demands that `PL` is B or W. **Rule**: the side to move must come from an explicit `PL`, not from a guess. **A gap that remains**: see 6.3, the `PL` of a starting position node without moves can be wrong.
+
+**事故 3：老师走的那手看不到，或被说成"AI 几乎不考虑" / Incident 3: the teacher's move missing, or described as "the AI hardly considers it"。** **现象**：用户找不到老师在视频里走的棋，列表里还写着"AI 几乎不考虑（访问不足）"（来自项目记录）。**根因**：老师的着法不一定在 KataGo 的前几名里，访问次数不够时数字不可信。**修复**：第二阶段强制评估（`analyze2.py` L412-437，`RC.forceTeacher()` L329-332）；棋盘上永远画出老师的着法（蓝色虚线圈加序号，`drawBoard()` L165-166）；评论里写"（老师走的）"。**规则**：永远显示老师的着法，并且强制评估它；"AI 几乎不考虑"这句话已经从代码里删除 **[已运行 / ran：搜索确认仓库里已没有这句]**。
+
+**What the user saw**: the user could not find the move the teacher played in the video, and the list said "AI 几乎不考虑（访问不足）" (the AI hardly considers it, too few visits) (from the project record). **Root cause**: the teacher's move is not necessarily among KataGo's top choices, and with too few visits the numbers cannot be trusted. **Fix**: the forced evaluation of the second phase (`analyze2.py` L412-437, `RC.forceTeacher()` L329-332); the teacher's moves are always drawn on the board (a dashed blue circle with a number, `drawBoard()` L165-166); the comment says "(老师走的)". **Rule**: always show the teacher's move and always force its evaluation. The sentence "AI 几乎不考虑" has been removed from the code **[ran: a search confirmed that it is gone from the repository]**.
+
+**事故 4：看到的是旧页面 / Incident 4: looking at an old page。** **现象**：用户以为修好了的问题，在页面里还在，因为浏览器缓存给了旧页面。**根因**：没有任何信息告诉用户"这是哪一版的页面和数据"。**修复**：页面左上角显示"界面 v4.7 · 数据 11-01 05:18"（`index.html` L278），一眼就能看出新旧；本地服务器 `pipeline/serve.py` 对每个响应加 `Cache-Control: no-store`；手机版的服务工作线程对 `library.js` 采用"先返回缓存、后台刷新"，缓存名和界面版本绑在一起，并且有测试检查两者一致（`tests/privacy.test.js`）。**规则**：不要在用户可能看着旧页面的时候说"已修好"；改动之后核对页面上的版本戳。**留意**：服务工作线程本身也是一层缓存，外壳文件靠"有新版本，点这里更新"的提示来换新，所以发布新版时必须升界面版本号。
+
+**What the user saw**: a problem the user thought fixed was still in the page, because the browser cache served an old page. **Root cause**: nothing told the user "which version of the page and the data is this". **Fix**: the top left of the page shows "界面 v4.7 · 数据 11-01 05:18" (`index.html` L278), old or new is visible at a glance; the local server `pipeline/serve.py` adds `Cache-Control: no-store` to every response; the service worker of the mobile edition serves `library.js` "from the cache and refreshes in the background", the cache name is tied to the interface version, and a test checks that the two agree (`tests/privacy.test.js`). **Rule**: do not say "fixed" while the user may be looking at an old page, and check the version stamp on the page after a change. **Watch out**: the service worker is itself a layer of cache, and the shell files are renewed by the "有新版本，点这里更新" prompt, so the interface version must be bumped on every release.
+
+**事故 5：节点编号漂移 / Incident 5: node id drift。** **现象**：AI 评估和要点贴在了错的着法上，而且没有任何报错。**根因**：评估和笔记都按节点编号存，编号是建树时的偶然顺序；同一分组后来多下载好一个视频，树重建，编号全变。**修复**：每个派生文件带上树的指纹（`treesync.tree_fingerprint()`，L22-30），合并前由 `check_analysis()`（L120-149）核对，不匹配就把旧文件改名 `.stale` 重新分析；要点笔记按"局面加最后一手"的身份搬到新树（`check_kp()`，L159-190）。细节见 2.8。**规则**：派生数据必须带着"我是从哪棵树来的"。
+
+**What the user saw**: the AI evaluation and the notes stuck to the wrong moves, with no error at all. **Root cause**: evaluations and notes are stored by node number, the numbers are an accident of the order in which the tree was built, and when another video of the same group finished downloading the tree was rebuilt and all numbers changed. **Fix**: every derived file carries the fingerprint of the tree (`treesync.tree_fingerprint()`, L22-30), `check_analysis()` (L120-149) checks it before merging, a mismatch renames the old file `.stale` and the analysis is rerun; the key point notes move to the new tree by the identity "position plus last move" (`check_kp()`, L159-190). See 2.8 for details. **Rule**: derived data must carry "which tree I came from".
+
+**事故 6：好的 SGF 被空壳覆盖 / Incident 6: good SGFs overwritten by empty shells。** **现象**：一次重建之后，原来有老师讲解和 AI 评估的 SGF 变成了空壳。**根因**：旧的 `regen` 把路径当字符串拼，拼丢了反斜杠；没有检查输入文件是否存在；还去找旧的、已经作废的 `a.json`（黑方视角的）而不是 `a2.json`。**修复**：所有路径用 `os.path.join`；`regen.py` 只在缓存文件都在时才重建某个分组；写入前过 `sgfcheck.validate()` 和 `worse()`，新文件不如旧文件就拒绝，候选存进 `rejected/`；`--dry-run` 先看会发生什么；`WEIQI_FORCE=1` 才允许强制覆盖（`orch2.sgf_decision()` L266-276，`regen.py`）。**规则**：写文件之前必须证明"新的不比旧的差"。
+
+**What the user saw**: after a rebuild, SGFs that had teacher commentary and AI evaluation became empty shells. **Root cause**: the old `regen` built paths as strings and lost the backslashes, did not check that the input files existed, and looked for the old, obsolete `a.json` (Black perspective) instead of `a2.json`. **Fix**: all paths use `os.path.join`; `regen.py` only rebuilds a group when its cache files are present; before writing, `sgfcheck.validate()` and `worse()` run, a new file that is poorer than the old one is refused and the candidate goes to `rejected/`; `--dry-run` shows what would happen first; only `WEIQI_FORCE=1` allows a forced overwrite (`orch2.sgf_decision()` L266-276, `regen.py`). **Rule**: before writing a file, prove that "the new one is not poorer than the old one".
+
+**事故 7：分析卡住、而且看不到进度 / Incident 7: the analysis hung and its progress was invisible。** **现象**：KataGo 分析长时间没有动静，没有日志，也不知道死活。**根因（推断）**：旧代码一口气把所有请求写给引擎再读答案，引擎和脚本可能互相等待；输出被捕获后丢弃，退出码被忽略。**修复**：窗口式发送、读答案的线程加超时、断点续跑、进度日志和预计剩余时间、退出码有含义（2.6，`analyze2.py`）；`orch2.run_analysis()`（L283-292）把输出存进 `logs/analyze_<分组>.log` 并报告非零退出码。**规则**：长任务必须能看见进度，能断点续跑，卡住时要有明确的报错。
+
+**What the user saw**: the KataGo analysis showed no activity for a long time, no log, and no way to tell whether it was alive. **Root cause (inferred)**: the old code wrote all requests to the engine in one go and then read the answers, so engine and script could wait for each other; the output was captured and thrown away and the exit code ignored. **Fix**: windowed sending, a thread that reads answers with a timeout, checkpoint resume, a progress log with an estimated time left, exit codes that mean something (2.6, `analyze2.py`); `orch2.run_analysis()` (L283-292) saves the output into `logs/analyze_<group>.log` and reports a non zero exit code. **Rule**: a long job must show progress, be able to resume, and report clearly when it is stuck.
+
+**事故 8：SGF 做好了，页面里却看不到（`library.js` 没有重新打包） / Incident 8: the SGFs were done but invisible in the page (`library.js` not repacked)。** **现象**（2026-11-01，来自项目记录，不在仓库里）：新生成的 SGF 大约 5 小时没有出现在页面里，页面一直显示"4/94"。**根因**：查看器只显示 `data/library.js` 里打包的内容，而重新打包（`tools/build.ps1`）是一个手工步骤，忘了。**修复**：工作目录里有一个循环脚本 `rebuild_loop.sh`，每 5 分钟自动运行一次 `tools/build.ps1`（它不在仓库里，我读过它，并看到打包文件的时间戳确实在更新 **[已运行 / ran，只读]**）；`tools/check_repo.py` 的 `library` 检查会发现"打包文件和 SGF 对不上"；查看器的黄色提示条显示"已完成 D/M"。**规则**：汇报进度时，要看**打包后的数量**，不能只看流水线日志，并且告诉用户真实数字。
+
+**What the user saw** (2026-11-01, from the project record, not in the repository): newly generated SGFs did not appear in the page for about 5 hours, the page kept showing "4/94". **Root cause**: the viewer only shows what is packed in `data/library.js`, and repacking (`tools/build.ps1`) was a manual step that was forgotten. **Fix**: the work folder has a loop script `rebuild_loop.sh` that runs `tools/build.ps1` every 5 minutes (it is not in the repository, I read it and saw that the timestamp of the packed file really keeps updating **[ran, read only]**); the `library` check of `tools/check_repo.py` finds "the packed file does not match the SGFs"; the viewer's yellow notice shows "done D/M". **Rule**: when reporting progress, look at the **packed count** and not only at the pipeline log, and tell the user the real number.
+
+**其他几个事故 / A few other incidents（`docs/PREMORTEM.md`）。** 错别字规则互相改坏文字，所以改成最长优先加重复到稳定（2.9）；下载锁在 40 次重试期间一直被占着，所以锁只在 yt-dlp 运行时持有（2.2）；写死的棋盘几何对别的版式输出垃圾，所以加了识别自检（2.4）；Windows 控制台的 cp936 编码让日志乱码，所以到处显式使用 UTF-8；辅助步骤（写要点的助手）写不了文件而没有任何提示，所以状态里记下"需要多少条要点、找到多少条"。
+
+Typo rules that damaged each other's text became longest first plus repeat until stable (2.9); the download lock held across 40 retries became a lock held only while yt-dlp runs (2.2); hard coded board geometry that produced garbage for another layout got the recognition self check (2.4); the cp936 encoding of Windows consoles garbled the logs, so UTF-8 is explicit everywhere; and a helper step (the helper that writes key points) that could not write files without any message now has "how many notes were wanted, how many found" in the status.
+
+汇总成一张"规则表"，以后每次改动都可以对照：
+
+Summed up as a table of rules to check against on every future change:
+
+| 规则 / Rule | 来自 / From |
+|---|---|
+| 一切分数先换成行棋方视角，局部搜索不显示全盘胜率 / Convert every score to the side to move first, never show a whole board winrate for a local search | 事故 1 / Incident 1 |
+| 行棋方必须来自 `PL`，预览颜色从行棋方开始轮流 / The side to move must come from `PL`, preview colours alternate from the side to move | 事故 2 / Incident 2 |
+| 永远显示并强制评估老师的着法 / Always show and force-evaluate the teacher's move | 事故 3 / Incident 3 |
+| 页面必须显示版本和数据时间，说"已修好"之前先核对 / The page must show the version and data time, check them before saying "fixed" | 事故 4 / Incident 4 |
+| 派生数据带指纹，合并前核对 / Derived data carries a fingerprint, check before merging | 事故 5 / Incident 5 |
+| 写文件前证明不比旧的差，所有写入原子 / Prove "not poorer" before writing a file, and make every write atomic | 事故 6 / Incident 6 |
+| 长任务要有进度、断点和超时 / A long job needs progress, a checkpoint and a timeout | 事故 7 / Incident 7 |
+| 汇报进度看打包后的数量 / Report progress by the packed count | 事故 8 / Incident 8 |
+| 没有验证过的事要明说；测试用的假数据必须标明是假的；有错的数据宁可撤下也不要留着 / Say plainly what was not verified; label fake test data as fake; withdraw wrong data rather than leave it up | 用户的反复要求 / The user's repeated requests |
+
+## 5. 仓库工作流 / Repository workflow
+
+**分支 / Branches。** 项目使用精简版的 Git Flow（详见 `docs/WORKFLOW.md`）：
+
+The project uses a trimmed down Git Flow (see `docs/WORKFLOW.md`):
+
+| 分支 / Branch | 用途 / Purpose |
+|---|---|
+| `main` | 已发布的稳定版本，每个版本号的标签都打在这里；现在是 v0.1 / Released stable versions, each version tag sits here; it is v0.1 today |
+| `develop` | 集成分支，日常工作先合并到这里；已经包含到 PR 15 的全部内容 / The integration branch where day to day work lands first; it already contains everything up to PR 15 |
+| `feature/<主题>`、`fix/<主题>` | 从 `develop` 切出的短命分支，新功能和修复 / Short lived branches cut from `develop`, features and fixes |
+| `data/<批次>` | 一批新生成的 SGF，例如 `data/2026-12-joseki-batch-2` / A batch of newly generated SGFs |
+| `release/<版本>`、`hotfix/<主题>` | 发版准备，以及对已发布版本的紧急修复 / Release preparation, and urgent fixes to a released version |
+
+`develop` 合到 `main` 只在"一个阶段稳定、值得算作一个版本"时发生，而不是每合并一个 PR 就合一次。工作流文档建议功能和修复分支用"压缩合并"（每个 PR 在 `develop` 上只留一个提交），但到目前为止的 15 个 PR 实际上都是普通的合并提交（`git log` 里是 `Merge pull request #N`）**[已运行 / ran]**。每个新批次的工作都开一个新分支，并且必须能干净地合进 `develop`；改同一个文件相邻几行的分支要"叠"起来（后一个以前一个为基础）。目前没有 CI（自动化流水线）；要不要加，需要先问你。
+
+`develop` goes into `main` only when "a stage is stable and worth calling a version", not after every merged PR. The workflow document recommends "squash merge" for feature and fix branches (each PR leaves one commit on `develop`), but so far the 15 PRs were in fact all plain merge commits (`git log` shows `Merge pull request #N`) **[ran]**. Every new batch of work gets its own new branch and must merge cleanly into `develop`; branches that edit adjacent lines of the same file are "stacked" (the later one is based on the earlier one). There is no CI (automated pipeline) at the moment, and whether to add one has to be asked of you first.
+
+已经合并进 `develop` 的 PR，以及还没合并的：
+
+The PRs already merged into `develop`, and the one still open:
+
+| PR | 内容 / Content |
+|---|---|
+| 1 | 分支规范、模板、许可证与算力建议文档 / Branching guide, templates, license and compute advice notes |
+| 2、13 | `remote/`：远程批处理工具；桥接服务的流式分析、终止、换网络 / `remote/`: remote batch tools; the bridge's streaming, terminate and network switch |
+| 3、4 | 算力开关；悬停预览老师的分支 / The compute switch; hover preview of teacher branches |
+| 5、6 | 许可证文件；README 和使用说明改成双语 / License files; README and usage made bilingual |
+| 7、8 | 加固流水线（原子写入、指纹、护栏、退避等）；修 `sync_pipeline.ps1` / Pipeline hardening (atomic writes, fingerprints, guards, backoff and more); the `sync_pipeline.ps1` fix |
+| 9、10 | 页脚署名与复制 SGF 时写署名；SGF 根节点写 `AP`、`CP`、`SO` / Credit footer and credit when copying SGF; `AP`, `CP`, `SO` in the SGF root |
+| 11 | 训练模式 / Quiz mode |
+| 12 | 检查中英文顺序的脚本 `tools/check_bilingual.py` / The script `tools/check_bilingual.py` that checks the Chinese first order |
+| 14 | KataGo 继续推演面板 / The KataGo continue panel |
+| 15 | 手机版界面、离线应用、托管准备 / Mobile edition, offline app, hosting preparation |
+| 16（未合并 / open） | 私有数据同步与去除讲解文字 / Private data sync and commentary stripping |
+
+**双语规则 / The bilingual rule。** 这是你定下的规则：**PR 的标题和正文，以及仓库里的文档（README、CONTRIBUTING、`docs/*`、CHANGELOG、`remote/README.md` 等）都要逐段双语，先中文后英文**：一段中文，紧跟着对应的英文；标题写成"中文标题 / English title"，小节标题写成"改动内容 / What changed"，表格单元格写成"中文 / English"。只有提交信息、代码注释和分支名用英文。围棋术语在中文里要专业自然（定式、星位、小目、三三、小飞挂、二间高夹、夹击、分叉点、变化图、提子、行棋方、目差、劫材、征子）。`tools/check_bilingual.py` 会检查这条规则（英文在前、缺中文或缺英文的段落、标题、单元格和 PR 标题），本文用它检查过 **[已运行 / ran]**。
+
+This is a rule you set: **the title and body of a PR, and the documents in the repository (README, CONTRIBUTING, `docs/*`, CHANGELOG, `remote/README.md` and so on) are bilingual paragraph by paragraph, Chinese first and then English**: a Chinese paragraph followed by its English counterpart; titles read "中文标题 / English title", section headings read "改动内容 / What changed", and table cells read "中文 / English". Only commit messages, code comments and branch names are English. Go terms must be professional and natural in Chinese (定式, 星位, 小目, 三三, 小飞挂, 二间高夹, 夹击, 分叉点, 变化图, 提子, 行棋方, 目差, 劫材, 征子). `tools/check_bilingual.py` checks the rule (English first, paragraphs, headings, cells and PR titles missing the Chinese or the English), and this document was checked with it **[ran]**.
+
+**提交的写法 / How to write a commit。** 格式遵循 Conventional Commits，但要像人写的：主题是简短的祈使句（`fix(viewer): use the right color in variation previews`），需要解释时再加一小段平实的话说明为什么这样改；不要列表、不要标题、不要 emoji，也不用长破折号（这是你的规则）；一个提交只做一件事；数据改动要和重新打包出来的 `data/library.js` 放在同一个提交里。给别人的贡献用 `git commit -s` 签署（开发者原产地证书，DCO），维护者自己的提交不需要。
+
+The format follows Conventional Commits but stays human: the subject is a short imperative sentence (`fix(viewer): use the right color in variation previews`), and when an explanation is needed one short paragraph of plain words says why; no lists, no headings, no emoji, and no long dashes (your rule); one commit does one thing; a data change travels in the same commit as the rebuilt `data/library.js`. Contributions from others are signed with `git commit -s` (the Developer Certificate of Origin, DCO), the maintainer's own commits do not need it.
+
+**许可证 / License。** 代码（`index.html`、`pipeline/`、`remote/`、`tools/`、`tests/` 等）采用 PolyForm Noncommercial License 1.0.0：允许非商业的使用、修改和分发，必须署名。我们自己产出的数据和文档（变化树结构、AI 评估数值、用我们自己的话写的要点、`docs/`、README）采用 CC BY-NC-SA 4.0：允许非商业使用和改编，必须署名，改编版必须沿用同样的许可。**老师的讲解文字不在任何许可范围内**（SGF 里以"【老师讲解"开头的部分以及视频转写），版权归陈林涛，署名归他。SGF 根节点的 `AP`、`CP`、`SO` 属性、README 的署名块、查看器页脚，三处都带着署名行（`NOTICE.md` 里有确切措辞）。许可证选择的理由、比较过的其他方案（PolyForm Strict、CC BY-NC-ND 考虑过但没有采用）和第三方软件的义务，写在 `docs/LICENSE-ADVICE.md`。**私有数据**：因为讲解文字不该留在公开仓库里继续增长，计划把完整数据放进一个私有仓库，公开仓库将来只发布去掉讲解正文的版本。`docs/PRIVATE-DATA.md` 目前**还不在 `develop` 上**，它在未合并的 PR 16（分支 `feature/private-data-sync`）里，同一个 PR 里有同步脚本 `tools/sync_private_data.ps1` 和去除工具 `tools/strip_commentary.py`；需要你决定的事：是否清理公开历史、切换之后流水线输出写到哪里、本地查看器怎样读到私有数据 **[内容来自 PR 16 的描述，我没有运行那些脚本]**。
+
+The code (`index.html`, `pipeline/`, `remote/`, `tools/`, `tests/` and so on) is under the PolyForm Noncommercial License 1.0.0: noncommercial use, modification and distribution are allowed, credit is required. Our own data and documents (the variation tree structure, the AI evaluation numbers, key points written in our own words, `docs/`, README) are under CC BY-NC-SA 4.0: noncommercial use and adaptation are allowed, credit is required, and adaptations must keep the same license. **The teacher's commentary text is outside every license** (the sections of the SGF that start with "【老师讲解" and any transcript of the videos), its copyright belongs to 陈林涛 and the credit goes to him. The credit line travels in three places: the `AP`, `CP`, `SO` properties of the SGF root, the credit block of the README, and the viewer footer (the exact wording is in `NOTICE.md`). The reasons for the choice, the other options compared (PolyForm Strict and CC BY-NC-ND were considered and not adopted) and the obligations for third party software are in `docs/LICENSE-ADVICE.md`. **Private data**: because the commentary text should not keep growing in the public repository, the plan is to put the full data into a private repository, and the public repository will later only publish a version without the commentary body. `docs/PRIVATE-DATA.md` is **not on `develop` yet**, it is in the unmerged PR 16 (branch `feature/private-data-sync`), which also holds the sync script `tools/sync_private_data.ps1` and the stripping tool `tools/strip_commentary.py`. Decisions that are yours: whether to clean the public history, where the pipeline writes its output after the cutover, and how the local viewer reads the private data **[taken from the description of PR 16, I did not run those scripts]**.
+
+**检查脚本和测试 / Lint scripts and tests。**
+
+| 命令 / Command | 检查什么 / What it checks |
+|---|---|
+| `python tools/check_repo.py` | 七项检查：`index.html` 引用的文件都在、JSON 能解析、`library.js` 与 SGF 对得上、SGF 语法、Python 能编译、没有误提交视频权重密钥、粗略的令牌扫描 / Seven checks: referenced files exist, JSON parses, `library.js` matches the SGFs, SGF syntax, Python compiles, no video, weight or key files committed, a rough token scan |
+| `python tools/check_bilingual.py 文件` | 中文在前、英文在后的双语规则 / The Chinese first bilingual rule |
+| `python pipeline/wq.py validate 路径` | SGF 校验（括号、坐标、`AN`、`PL`） / SGF validation (brackets, coordinates, `AN`, `PL`) |
+| `python pipeline/mkfix.py check` | 错别字词典有没有循环 / Whether the typo dictionary has cycles |
+| Docker 里的 `pytest`（273 个）和 `node --test tests/`（118 个） / `pytest` (273) and `node --test tests/` (118) in Docker | 流水线、护栏、查看器纯逻辑、隐私栏杆、服务工作线程 / The pipeline, the guards, the viewer's pure logic, the privacy railing, the service worker |
+
+测试一律在 Docker 里跑，不建 venv，主机上什么都不装（你的规则）：Python 测试用 `Dockerfile`（`python:3.12-slim`，只装 pytest 和 numpy，复制 `pipeline`、`tools`、`data`、`tests`，不需要显卡、视频、KataGo 或 Whisper），Node 测试用 `node:20-alpine` 把仓库只读挂载进去。我这次运行的结果：Python 273 个收集、退出码 0；Node 118 个通过 **[已运行 / ran]**。命令见附录 A。
+
+Tests always run in Docker, never in a venv, and nothing is installed on the host (your rule): the Python tests use the `Dockerfile` (`python:3.12-slim`, installs only pytest and numpy, copies `pipeline`, `tools`, `data` and `tests`, and needs no graphics card, video, KataGo or Whisper), and the Node tests use `node:20-alpine` with the repository mounted read only. The result of my run: 273 Python tests collected and exit code 0, 118 Node tests passed **[ran]**. The commands are in appendix A.
+
+## 6. 现状与局限 / State and limits
+
+这一节尽量诚实：哪些我实际验证过，哪些没有，已知的缺陷是什么。所有"现状"数字都是 2026-11-08 早晨我读到的，流水线还在运行，所以它们会变。
+
+This section tries to be honest: what I really verified, what not, and what the known defects are. All "state" numbers were read by me on the morning of 2026-11-08 and the pipeline is still running, so they will change.
+
+### 6.1 已验证与未验证 / Verified and not verified
+
+| 事项 / Item | 状态 / Status |
+|---|---|
+| Python 单元测试 / Python unit tests | 273 个收集，退出码 0；3 个跳过，其中 2 个是因为 Docker 镜像里没有 `data/library.js`，1 个是有意跳过 `wqutil.py` 自己（原子写入就实现在那里） / 273 collected, exit code 0; 3 skipped, 2 because the Docker image has no `data/library.js` and 1 deliberately skips `wqutil.py` itself (the atomic writes are implemented there) **[已运行 / ran]** |
+| Node 测试 / Node tests | 118 个通过（引擎逻辑、网络客户端、隐私栏杆、训练逻辑、服务工作线程） / 118 pass (engine logic, network client, privacy railing, quiz logic, service worker) **[已运行 / ran]** |
+| `tools/check_repo.py` | 0 个错误，2 个警告（没有 node，所以内联脚本语法没检查；90 个占位 SGF 里有没转义的 `]`） / 0 errors, 2 warnings (no node, so the inline script syntax was not checked; the 90 placeholder SGFs contain an unescaped `]`) **[已运行 / ran]** |
+| 流水线在真实数据上跑过 / The pipeline has run on real data | 作者电脑上已有 47 个有内容的 SGF，全部通过校验；日志里有真实的 yt-dlp 限流重试记录 / 47 SGFs with content on the owner's computer, all pass validation; the log holds real yt-dlp throttling retries **[已运行 / ran，只读]** |
+| 变化树、合并、KataGo 请求与换算 / Tree, merge, KataGo request and conversion | 用编出来的输入跑了真实的函数，输出贴在 1.4 / ran the real functions with made up input, the output is in 1.4 **[已运行 / ran]** |
+| 真实 KataGo 的启动检测、窗口、断点 / The real KataGo startup check, window, checkpoint | 只用假引擎测过 / Only tested with a fake engine **[未核实 / not verified]** |
+| 引擎面板与桥接服务连接真实 KataGo / The engine panel and bridge with a real KataGo | 从未运行 / Never run **[未核实 / not verified]** |
+| 手机版在真机上 / The mobile edition on real phones | 只在电脑浏览器里改视口检查过 / Only checked by resizing the viewport in a desktop browser **[未核实 / not verified]** |
+| 云端批处理（`remote/`）/ Cloud batch (`remote/`) | 没有账号，从未在真实云平台运行 / No account, never run on a real cloud platform **[未核实 / not verified]** |
+| 转写的错字率、变化树的逐点准确度 / The typo rate of the transcripts, the point by point accuracy of the trees | 没有系统检查 / Not checked systematically **[未核实 / not verified]** |
+| 网上托管 / Hosting online | 没有做，也没有公开网址 / Not done, no public URL |
+
+### 6.2 当前数字 / Current numbers
+
+`develop`（提交 `9fa1fcd`）里的数据还是 2026-11-01 05:18 的快照：94 个分组文件，其中 4 个有内容（`星位-点三三`、`星位-小飞挂-小飞守角与托角连扳`、`星位-小飞挂-一间低夹`、`小目-小飞挂-二间高夹`），只有最后一个带 AI 评估（85 个带评估的节点）。这些是旧快照，**作者电脑上的工作目录已经走在前面**：按查看器"SGF 超过 1500 个字符算完成"的标准，定式大全 31 个分组里 29 个有内容，其中 15 个有 AI 评估（每个 60 到 239 个带评估的节点），29 个有要点笔记；套路研究 2/18；避雷 16/45（这是 2026-11-08 06:13 的读数，流水线还在跑，数字会继续变）。没有完成的两个定式大全分组是 `高目与超高目` 和 `系列-完结与综述`，它们的视频序号大于 `WEIQI_MAX_IDX` 的默认值 49，所以被跳过了。作者电脑上的这些新数据**没有提交到任何地方**，`develop` 并不包含它们 **[已运行 / ran，只读]**。
+
+The data in `develop` (commit `9fa1fcd`) is still the snapshot of 2026-11-01 05:18: 94 group files, 4 of them with content (`星位-点三三`, `星位-小飞挂-小飞守角与托角连扳`, `星位-小飞挂-一间低夹`, `小目-小飞挂-二间高夹`), and only the last has AI evaluation (85 nodes with evaluation). That is an old snapshot, **the work folder on the owner's computer is ahead of it**: by the viewer's standard "an SGF over 1500 characters counts as done", 29 of the 31 groups of 定式大全 have content, 15 of them have AI evaluation (60 to 239 evaluated nodes each) and 29 have key point notes; 套路研究 2/18; 避雷 16/45 (readings of 2026-11-08 06:13, the pipeline is still running and the numbers will keep moving). The two unfinished groups of 定式大全 are `高目与超高目` and `系列-完结与综述`, whose video numbers are above the default 49 of `WEIQI_MAX_IDX`, so they are skipped. These newer data on the owner's computer are **not committed anywhere**, and `develop` does not contain them **[ran, read only]**.
+
+视频方面：定式大全的 49 个视频（序号 49 以内）在主工作目录里都已处理，失败清单是空的。套路研究和避雷的工作目录里分别还有 16 个和 29 个失败的视频：版式被识别器拒绝的（9 个和 18 个）、被限流的（3 个和 9 个）、其他（下载没有结果或没有网络）。
+
+On the video side: the 49 videos of 定式大全 (numbers up to 49) are all processed in the main work folder and the failure list is empty. The work folders of 套路研究 and 避雷 still have 16 and 29 failed videos respectively: refused by the recogniser for their layout (9 and 18), throttled (3 and 9), and others (no download result or no network).
+
+### 6.3 已知缺陷 / Known defects
+
+**缺陷 A：起始局面节点的行棋方可能是错的（我写这份指南时发现，还没修）。** 如果视频一开始就是"摆好了几颗子的图"，那么变化树的第一个节点是一个"摆好的起始局面"，没有着法。`analyze2.query()`（L254-262）在没有 `moves` 时没有告诉 KataGo 谁先走（没有 `initialPlayer`），而查看器自己的 `RC.query()` 是写了的（`index.html` L321）。结果是 KataGo 按默认的黑棋先走来评估，节点的 `turn` 被记成 B，合并后写成 `PL[B]`。如果老师接着下的是白棋，这个节点上的候选点就是"黑棋的候选"，颜色是黑色半透明的，排名和"差几目"也是对黑棋算的，而且和白棋的老师着法（强制评估时的得分是对白棋算的）放在一起比较，两个视角被混在了一起；训练模式也会"问错了一方"。**证据 [已运行 / ran，只读]**：我读了作者电脑上已经完成分析的 29 个起始局面节点（06:13 的读数），记录的 `turn` 有 28 个是 B、1 个是 W；其中 11 个节点（分布在 7 个分组里，例如 `星位-点三三`、`星位-小飞挂-一间低夹`、`星位-双飞燕`）老师接下来的着法全部是白棋，却按黑棋先行评估了，另有 1 个节点老师黑白两种都下过。**[未核实]**"KataGo 在没有 `initialPlayer` 时默认黑棋"是我根据这些数据的推断，没有运行 KataGo 去确认。`develop` 上现有的带 AI 评估的 SGF（`小目-小飞挂-二间高夹`）没有这种带 `PL` 的起始局面节点，所以不受影响 **[已运行 / ran]**。**建议的修法**：在 `query()` 里，当 `moves` 为空时，按这个节点的老师着法的颜色（或和查看器 `nextCol()` 同样的规则）设置 `initialPlayer`，然后重新分析受影响的 7 个分组，并给这条路径加一个测试。这份指南没有改代码。
+
+**Defect A: the side to move of starting position nodes can be wrong (found while writing this guide, not fixed).** If a video begins with "a diagram with a few stones already laid out", the first node of the variation tree is a "laid out starting position" without a move. When there are no `moves`, `analyze2.query()` (L254-262) does not tell KataGo who moves first (no `initialPlayer`), while the viewer's own `RC.query()` does (`index.html` L321). The result is that KataGo evaluates with its default of Black to move, the `turn` of the node is recorded as B, and the merge writes `PL[B]`. If the teacher then plays White, the candidates on this node are "Black's candidates", drawn as translucent black stones, their ranking and "points worse" are computed for Black, and they are compared with the teacher's White move (whose forced evaluation is computed for White), so two perspectives are mixed; quiz mode would also "ask about the wrong side". **Evidence [ran, read only]**: I read the 29 already analysed starting position nodes on the owner's computer (readings of 06:13), and the recorded `turn` is B in 28 and W in 1; in 11 of them (spread over 7 groups, for example `星位-点三三`, `星位-小飞挂-一间低夹`, `星位-双飞燕`) every following teacher move is White, yet the node was evaluated with Black to move, and in 1 more the teacher played both colours. **[Not verified]** "KataGo defaults to Black without `initialPlayer`" is my inference from this data, I did not run KataGo to confirm. The one SGF with AI evaluation on `develop` (`小目-小飞挂-二间高夹`) has no such starting position node with `PL`, so it is not affected **[ran]**. **Suggested fix**: in `query()`, when `moves` is empty, set `initialPlayer` from the colour of the node's teacher moves (or by the same rule as the viewer's `nextCol()`), then analyse the 7 affected groups again and add a test for this path. This guide changes no code.
+
+**缺陷 B：`README.md` 已经过时。** 它的"即将到来"一节还说悬停预览、算力开关和 `remote/` "还在 PR 里等待合并"，但它们早已合并（PR 2、3、4）；"v0.1 现状"表格也还是快照时的状态 **[已运行 / ran：对照 `develop` 核对过]**。
+
+**Defect B: `README.md` is out of date.** Its "Upcoming" section still says the hover preview, the compute switch and `remote/` are "waiting in pull requests", but they were merged long ago (PRs 2, 3, 4), and the "Status at v0.1" table is still the state of the snapshot **[ran: checked against `develop`]**.
+
+**缺陷 C：占位文案与占位文件。** 查看器对"从未分析过的分组"显示的"AI 分析正在用修正后的方法重新生成"措辞不准（3.8）；`tools/build.ps1` 早先生成的 90 个占位 SGF 里有没转义的 `]`（`check_repo.py` 报警告，等对应分组填入内容时会被替换）。
+
+**Defect C: placeholder wording and placeholder files.** The viewer's "the AI analysis is being regenerated with the corrected method" shown for groups that were never analysed is inaccurate (3.8), and the 90 placeholder SGFs that `tools/build.ps1` generated earlier contain an unescaped `]` (`check_repo.py` warns, and they are replaced when their groups are filled in).
+
+**缺陷 D：几个"有意不改"的限制。** 棋盘识别只读 19 列里的 18 列（2.4）；`detect_report_as()` 分不清"白方视角"和"行棋方视角"（2.6）；查看器假定讲解在左下角（3.3）；单字错别字规则会误伤正确的词（2.9）。
+
+**Defect D: several limits that were left on purpose.** Board recognition reads only 18 of the 19 columns (2.4); `detect_report_as()` cannot tell "White's view" from "side to move's view" (2.6); the viewer assumes the lesson is in the lower left corner (3.3); single character typo rules can hurt correct words (2.9).
+
+### 6.4 语音识别与棋盘识别的弱点 / Weaknesses of speech and board recognition
+
+**语音识别 / Speech recognition。** 围棋术语是语音识别的难点：同音字（棋和旗、扳和搬、征和争）、冷门词（二间高夹、托角连扳）、说话人把"这里""那里"配合手势说得含糊。Whisper 的 `small` 模型在 CPU 上量化运行，速度优先；偶尔输出乱码般的中英混杂片段，或者把一句话断在中间。词典能修已知的错，修不了没见过的错；而"要点"是由大语言模型根据**已经改过错字的**文字写的，所以转写里没改掉的错会传到要点里。最稳妥的办法是：对每个分组抽样，由懂围棋的人把转写和视频对一遍，把新发现的错字加进词典，再 `regen`。
+
+Go terms are hard for speech recognition: homophones (棋 and 旗, 扳 and 搬, 征 and 争), rare words (二间高夹, 托角连扳), and a speaker saying "here" and "there" vaguely while pointing. The Whisper `small` model runs quantised on the CPU, speed first; it occasionally outputs garbled mixed Chinese and English fragments or cuts a sentence in the middle. The dictionary fixes known mistakes and not unseen ones, and the "key points" are written by a large language model from the text **after typo fixing**, so a mistake the dictionary did not fix travels into the key points. The safest approach is to sample every group, have someone who knows Go compare the transcript with the video, add the newly found typos to the dictionary and run `regen`.
+
+**棋盘识别 / Board recognition。** 它只认 1134 乘 720 的固定版式（2.4），其余版式整段视频被拒绝，这是当前最大的覆盖面缺口：套路研究和避雷的大多数视频因此没有 SGF。即使版式对，也有这些弱点：只读 18 列；靠亮度阈值读棋子，如果录屏的配色、棋子样式变了就会失灵（自检会拒绝，但不会自适应）；老师在棋盘上画的标记、数字和鼠标指针可能被读成棋子（靠 0.5 秒的闪烁修剪挡住一部分）；变化树不记走棋顺序，转置会被合并（2.5）。更好的做法（还没做）：为每种版式记录一套几何参数，或者改用能适应缩放的识别方法，并且把识别结果和视频逐帧对一遍做回归测试。
+
+It only accepts the fixed layout of 1134 by 720 (2.4), and a video with any other layout is refused as a whole, which is currently the biggest gap in coverage: most videos of 套路研究 and 避雷 therefore have no SGF. Even with the right layout there are weaknesses: only 18 columns are read; stones are read by brightness thresholds, which fail if the colours or stone style of the screen recording change (the self check refuses but does not adapt); marks, numbers and the mouse pointer the teacher puts on the board can be read as stones (the 0.5 second flicker pruning stops some); the tree does not record the move order and transpositions are merged (2.5). Better approaches (not done): record a set of geometry parameters for every layout, or switch to a recognition method that adapts to scaling, and compare the recognition with the video frame by frame as a regression test.
