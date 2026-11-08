@@ -5,6 +5,11 @@ No GPU, no network. Behaviour is steered with env vars so the tests can reproduc
   FAKE_CRASH_AFTER=n                exit abruptly after n answers
   FAKE_STALL_AFTER=n                keep reading but stop answering after n answers
   FAKE_QUERY_LOG=path               append every received query id to this file
+  FAKE_REQUEST_LOG=path             append every received request as one json line (to check what was really sent)
+
+Who moves: like the real engine, the side after the last move of `moves` is the opposite of that move's colour; with no
+moves it is `initialPlayer`, and WITHOUT initialPlayer the engine guesses Black (the real one does that for a position
+set up from stones, which is incident 12). So a request that forgets initialPlayer is answered for Black here too.
 """
 import json
 import os
@@ -16,13 +21,14 @@ REPORT_AS = os.environ.get("FAKE_REPORT_AS", "BLACK")
 CRASH_AFTER = int(os.environ.get("FAKE_CRASH_AFTER", "0"))
 STALL_AFTER = int(os.environ.get("FAKE_STALL_AFTER", "0"))
 QUERY_LOG = os.environ.get("FAKE_QUERY_LOG")
+REQUEST_LOG = os.environ.get("FAKE_REQUEST_LOG")
 
 
 def answer(req):
     stones = {p: c for c, p in req.get("initialStones", [])}
     stones.update({p: c for c, p in req.get("moves", [])})
     moves = req.get("moves", [])
-    turn = ("W" if moves[-1][0] == "B" else "B") if moves else req.get("initialPlayer", "B")
+    turn = ("W" if moves[-1][0] == "B" else "B") if moves else req.get("initialPlayer", "B")   # no moves and no initialPlayer: the engine guesses Black
     allow = req["allowMoves"][0]["moves"] if "allowMoves" in req else [L[c] + str(r) for c in range(19) for r in range(1, 20)]
     free = [m for m in allow if m not in stones][:6]
     selftest = req["id"] == "selftest"
@@ -51,6 +57,9 @@ def main():
         if QUERY_LOG:
             with open(QUERY_LOG, "a", encoding="utf-8") as f:
                 f.write(req["id"] + "\n")
+        if REQUEST_LOG:
+            with open(REQUEST_LOG, "a", encoding="utf-8") as f:
+                f.write(json.dumps(req) + "\n")
         if STALL_AFTER and answered >= STALL_AFTER:
             continue                                          # silent engine
         sys.stdout.write(json.dumps(answer(req)) + "\n")

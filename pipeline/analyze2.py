@@ -10,6 +10,9 @@ Scores are ALWAYS stored from the side to move (stm). KataGo reports them from B
 when reportAnalysisWinratesAs=BLACK, so convert() flips them for White. How the engine reports is not
 assumed: a handicap position with White to move is asked first (detect_report_as).
 
+Who moves first is never left to KataGo: a node without moves (a position set up from stones) is sent with an explicit
+initialPlayer, the colour the teacher plays next (side_to_move). Nodes with moves get their side from the moves.
+
 Robustness: results are checkpointed to out.json.part (resume after a crash, same tree only), progress with an
 ETA goes to out.json.progress.log, a silent or dead engine ends the run with a clear message instead of a hang.
 """
@@ -222,6 +225,11 @@ def gtp(c, r):
     return L[c] + str(19 - r)
 
 
+def allowed(R):
+    """GTP points of the region: the only moves KataGo may suggest."""
+    return [gtp(x, y) for x in range(R['x0'], R['x1'] + 1) for y in range(R['y0'], R['y1'] + 1)]
+
+
 def parse_pos(pos):
     d = {}
     for t in re.findall(r'[BW]\d+', pos):
@@ -257,13 +265,43 @@ def query(N, R, allow, i, ctx, qid, visits):
     ini = [[v, gtp(*k)] for k, v in parse_pos(N[ri]['pos']).items() if ctx or inreg(R, *k)]
     mv = [[N[j]['mv'][1], gtp(N[j]['mv'][0] % C, N[j]['mv'][0] // C)] for j in p
           if (ctx or inreg(R, N[j]['mv'][0] % C, N[j]['mv'][0] // C))]
-    return {'id': qid, 'initialStones': ini, 'moves': mv, 'rules': 'japanese', 'komi': 6.5, 'boardXSize': 19, 'boardYSize': 19,
-            'analyzeTurns': [len(mv)], 'maxVisits': visits,
-            'allowMoves': [{'player': 'B', 'moves': allow, 'untilDepth': 40}, {'player': 'W', 'moves': allow, 'untilDepth': 40}]}
+    req = {'id': qid, 'initialStones': ini, 'moves': mv, 'rules': 'japanese', 'komi': 6.5, 'boardXSize': 19, 'boardYSize': 19,
+           'analyzeTurns': [len(mv)], 'maxVisits': visits,
+           'allowMoves': [{'player': 'B', 'moves': allow, 'untilDepth': 40}, {'player': 'W', 'moves': allow, 'untilDepth': 40}]}
+    if not mv:
+        # Incident 12: with no moves KataGo guesses who plays first (mostly Black), so a position set up from stones where the
+        # teacher continues with White was analysed for the wrong side. Say it explicitly. This also covers a control
+        # query (ctx=False) whose moves all lie outside the region.
+        req['initialPlayer'] = side_to_move(N, i)
+    return req
 
 
 def live_children(N, i):
     return [c for c in N[i]['ch'] if not N[c]['dead']]
+
+
+def side_to_move(N, i):
+    """'B' or 'W' for node i: the opposite of the colour that just moved, else (a position set up from stones, or the empty
+    board) the colour the teacher plays next, i.e. the majority among its live children (a tie goes to Black), else 'B'."""
+    if N[i]['mv'] is not None:
+        return 'W' if N[i]['mv'][1] == 'B' else 'B'
+    cols = [N[c]['mv'][1] for c in live_children(N, i) if N[c]['mv']]
+    return max(sorted(set(cols)), key=cols.count) if cols else 'B'
+
+
+def wrong_turns(N, entries):
+    """Keys ('<id>' or '<id>_0') of entries about a node without a move (a position set up from stones, or the empty board)
+    whose recorded turn is not side_to_move(). A node with a move cannot go wrong this way: KataGo reads the side from the moves.
+    `entries` is an a2.json dict or a checkpoint's `done`; stubs without a turn (engine errors) are skipped."""
+    bad = []
+    for k, a in entries.items():
+        m = re.fullmatch(r'(\d+)(_0)?', k)
+        if not m or not isinstance(a, dict) or a.get('turn') not in ('B', 'W'):
+            continue
+        i = int(m.group(1))
+        if i < len(N) and not N[i]['dead'] and N[i]['mv'] is None and a['turn'] != side_to_move(N, i):
+            bad.append(k)
+    return bad
 
 
 def branch_nodes(N):
@@ -358,6 +396,53 @@ def run_queries(eng, reqs, done, convert_fn, save, prog, window, node_of, every=
     return got - base
 
 
+def search_nodes(eng, N, R, allow, nodes, VB, VF, conv, done, save, prog, window):
+    """The two search phases for `nodes`. Returns {request id: record}: '<id>' (main search, the teacher's moves attached as
+    forced candidates) and '<id>_0' (the control run without the stones outside the region, when there are such stones).
+
+    `done` holds answers already known (a checkpoint) and receives the new ones. analyze() runs this for every branch
+    node, fixturns.py (wq.py fix-setup-turns) for the few nodes whose entries have to be redone.
+    """
+    base_of = lambda q: q.split('_')[0]
+    # phase 1: main search at every node (+ a control run without the stones outside the region)
+    reqs = []
+    for i in nodes:
+        reqs.append(query(N, R, allow, i, True, '%d' % i, VB))
+        if any(not inreg(R, *k) for k in stones_at(N, i)):
+            reqs.append(query(N, R, allow, i, False, '%d_0' % i, min(VB, 200)))
+    already = sum(1 for r in reqs if r['id'] in done)
+    prog.start('phase 1/2 main search', len(reqs), already, len(nodes), len({base_of(r['id']) for r in reqs if r['id'] in done}))
+    run_queries(eng, reqs, done, conv, save, prog, window, base_of)
+    res = {r['id']: done[r['id']] for r in reqs}
+    # phase 2: the teacher's move at each node, if the main search did not look at it enough
+    reqs2, need = [], []
+    for i in nodes:
+        a = res.get('%d' % i)
+        if not a or 'cand' not in a:
+            continue
+        tv = max(m['v'] for m in a['cand'])
+        for ch in live_children(N, i):
+            if N[ch]['mv'] is None:
+                continue
+            m = gtp(N[ch]['mv'][0] % C, N[ch]['mv'][0] // C)
+            cm = next((x for x in a['cand'] if x['m'] == m), None)
+            if cm and cm['v'] >= max(10, .1 * tv):
+                continue
+            if m not in allow:
+                continue  # outside the region (tenuki): not evaluated
+            reqs2.append(query(N, R, allow, ch, True, 'f%d' % ch, VF))
+            need.append((i, ch, m))
+    prog.start('phase 2/2 teacher moves', len(reqs2), sum(1 for r in reqs2 if r['id'] in done), len(reqs2), 0)
+    run_queries(eng, reqs2, done, conv, save, prog, window, lambda q: q)
+    for i, ch, m in need:
+        f, a = done.get('f%d' % ch), res['%d' % i]
+        if not f or 'cand' not in f or not f['cand']:
+            continue
+        t = f['cand'][0]
+        a['cand'].append({'m': m, 'v': VF, 's': round(-f['score'], 1), 'wr': round(1 - f['wr'], 3), 'p': -1, 'pv': [m] + t['pv'][:7], 'f': 1})
+    return res
+
+
 def analyze(N, out, VB, VF, limit=0, log=lambda s: print(s, file=sys.stderr, flush=True)):
     """Whole run. Exit code: 0 ok, 2 nothing to analyse, 3 suspicious scores written, 4 engine failed, 5 engine missing."""
     c = cfg()
@@ -365,7 +450,7 @@ def analyze(N, out, VB, VF, limit=0, log=lambda s: print(s, file=sys.stderr, flu
     if R is None:
         log('ERROR the tree has no moves: nothing to analyse (did board recognition fail for every video?)')
         return 2
-    allow = [gtp(x, y) for x in range(R['x0'], R['x1'] + 1) for y in range(R['y0'], R['y1'] + 1)]
+    allow = allowed(R)
     todo = branch_nodes(N)
     if limit:
         todo = todo[:limit]
@@ -395,46 +480,15 @@ def analyze(N, out, VB, VF, limit=0, log=lambda s: print(s, file=sys.stderr, flu
         state['report_as'] = report_as
         log('score perspective of the engine: %s (%s), stored as side to move' % (report_as, source))
         done.update(load_part(part, fp, [VB, VF], report_as))
+        stale = wrong_turns(N, done)
+        for k in stale:   # a checkpoint from before incident 12 may hold setup nodes analysed for the wrong side
+            del done[k]
+        if stale:
+            log('WARN dropped %d checkpoint results with the wrong side to move, they are asked again: %s' % (len(stale), ', '.join(stale)))
         if done:
             log('resuming: %d results from an earlier run' % len(done))
         conv = lambda d: convert(d, report_as)
-        base_of = lambda q: q.split('_')[0]
-        # phase 1: main search at every branch point (+ a control run without the stones outside the region)
-        reqs = []
-        for i in todo:
-            reqs.append(query(N, R, allow, i, True, '%d' % i, VB))
-            if any(not inreg(R, *k) for k in stones_at(N, i)):
-                reqs.append(query(N, R, allow, i, False, '%d_0' % i, min(VB, 200)))
-        already = sum(1 for r in reqs if r['id'] in done)
-        prog.start('phase 1/2 main search', len(reqs), already, len(todo), len({base_of(r['id']) for r in reqs if r['id'] in done}))
-        run_queries(eng, reqs, done, conv, save, prog, c['window'], base_of)
-        res = {r['id']: done[r['id']] for r in reqs}
-        # phase 2: the teacher's move at each branch point, if the main search did not look at it enough
-        reqs2, need = [], []
-        for i in todo:
-            a = res.get('%d' % i)
-            if not a or 'cand' not in a:
-                continue
-            tv = max(m['v'] for m in a['cand'])
-            for ch in live_children(N, i):
-                if N[ch]['mv'] is None:
-                    continue
-                m = gtp(N[ch]['mv'][0] % C, N[ch]['mv'][0] // C)
-                cm = next((x for x in a['cand'] if x['m'] == m), None)
-                if cm and cm['v'] >= max(10, .1 * tv):
-                    continue
-                if m not in allow:
-                    continue  # outside the region (tenuki): not evaluated
-                reqs2.append(query(N, R, allow, ch, True, 'f%d' % ch, VF))
-                need.append((i, ch, m))
-        prog.start('phase 2/2 teacher moves', len(reqs2), sum(1 for r in reqs2 if r['id'] in done), len(reqs2), 0)
-        run_queries(eng, reqs2, done, conv, save, prog, c['window'], lambda q: q)
-        for i, ch, m in need:
-            f, a = done.get('f%d' % ch), res['%d' % i]
-            if not f or 'cand' not in f or not f['cand']:
-                continue
-            t = f['cand'][0]
-            a['cand'].append({'m': m, 'v': VF, 's': round(-f['score'], 1), 'wr': round(1 - f['wr'], 3), 'p': -1, 'pv': [m] + t['pv'][:7], 'f': 1})
+        res = search_nodes(eng, N, R, allow, todo, VB, VF, conv, done, save, prog, c['window'])
     except EngineError as e:
         save()
         log('ERROR %s. %d results are kept in %s, run again to continue.' % (e, len(done), part))
