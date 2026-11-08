@@ -29,9 +29,9 @@
 | 浏览器 WebGPU 版 KataGo（web-katrain / Kaya） / Browser WebGPU KataGo (web-katrain / Kaya) | 可能用到核显（经由 D3D12）；速度未实测 / May use the integrated GPU (via D3D12); speed not measured | 免费 / 0 | 上传的模型限 128MB，而本项目使用的权重有 262MB；换网络 => 结果无法与现有数据比较 / Uploaded models are limited to 128MB and the weights used here are 262MB; a different network => results not comparable with the existing data | 是 / Yes |
 | **Colab/Kaggle + ngrok/cloudflared 隧道，供网页实时使用** / **Colab/Kaggle + ngrok/cloudflared tunnel for real-time web page use** | - | - | 账号被封或运行时被终止 / Account ban / runtime termination | **违反条款；本目录不提供** / **Violates the terms; not provided in this directory** |
 
-速度一栏是根据“本机约 20 visits/秒”和社区数据估算的（有一篇旧帖给出 T4 上每秒约 390 次网络评估，但那是小网络、旧版本）。**第一组跑完后，请用 `meta.json` 里的 `seconds` 字段校准。**
+速度一栏是根据“本机约 20 visits/秒”和社区数据估算的（有一篇旧帖给出 T4 上每秒约 390 次网络评估，但那是小网络、旧版本）。本机日志里的基准：一次主搜索（220 visits）约 14 秒，一次对老师着法的强制评估（100 visits）约 4.5 秒。**第一组跑完后，请用 `g_<名称>.a2.meta.json` 里的 `seconds` 和 `sec_per_query` 校准。**
 
-The speed column is estimated from "20 visits/s locally" and community data (one old post gives about 390 network evaluations per second on a T4, but that was a small network and an old version). **After the first group finishes, calibrate with the `seconds` field in `meta.json`.**
+The speed column is estimated from "20 visits/s locally" and community data (one old post gives about 390 network evaluations per second on a T4, but that was a small network and an old version). The baseline from the local logs: one main search (220 visits) takes about 14 seconds and one forced evaluation of a teacher move (100 visits) about 4.5 seconds. **After the first group finishes, calibrate with `seconds` and `sec_per_query` in `g_<name>.a2.meta.json`.**
 
 ## 2. 为什么这样设计 / Why it is designed this way
 
@@ -39,9 +39,13 @@ The speed column is estimated from "20 visits/s locally" and community data (one
 
    **Batch first**: one run produces a whole group's `a2.json`, in the same format as the existing pipeline, auditable and re-runnable (finished groups are skipped automatically).
 
-2. **移植逻辑，不要重写**：`analyze_remote.py` 是 `analyze2.py` 的逐行移植（定式区域、分叉点、对老师着手的强制评估、`reportAnalysisWinratesAs=BLACK` → 行棋方视角）。`selftest.py --ref analyze2.py` 会让两者在同一个模拟引擎上运行，输出**逐字节相同**。
+2. **不复制逻辑，直接调用**：`analyze_remote.py` 只负责循环、排序和打包，每个分组的分析都由 `pipeline/analyze2.py` 完成（定式区域、分叉点、对老师着法的强制评估、`reportAnalysisWinratesAs=BLACK` → 行棋方视角、窗口限制、检查点、树指纹）。以前的逐行移植版落后于加固后的 `analyze2.py`（没有 `_meta`、一次写出所有请求），现在本机和云端不可能再各走各的。`tests/test_remote_batch.py` 证明笔记本的输出能通过指纹和视角检查，并且被杀掉的运行会从检查点续跑。
 
-   **Port the logic, do not rewrite it**: `analyze_remote.py` is a line-by-line port of `analyze2.py` (region, branch points, forced evaluation of the teacher's moves, `reportAnalysisWinratesAs=BLACK` → side-to-move perspective). `selftest.py --ref analyze2.py` runs both on the same fake engine and the outputs are **byte-for-byte identical**.
+   **Call the logic, do not copy it**: `analyze_remote.py` only loops, orders and packages; the analysis of every group is done by `pipeline/analyze2.py` (region, branch points, forced evaluation of the teacher's moves, `reportAnalysisWinratesAs=BLACK` → side-to-move perspective, request window, checkpoint, tree fingerprint). The earlier line-by-line port had fallen behind the hardened `analyze2.py` (no `_meta`, all requests written at once); now the local and the cloud run cannot drift apart. `tests/test_remote_batch.py` shows that the notebook output passes the fingerprint and perspective checks and that a killed run resumes from its checkpoint.
+
+   另有一处修正：没有着法的请求（摆子局面的节点）原来不带 `initialPlayer`，KataGo 默认黑棋先走，老师接着走白棋的摆子局面就按错误的一方分析了。云端脚本现在对这类请求显式写入行棋方（规则与本机 `analyze2.py` 里的修复相同：路径上最后一手的对方；摆子节点则取老师接下来所走颜色的多数，平局取黑，没有后续就取黑）；已经带 `initialPlayer` 的请求不会被改动。
+
+   One more correction: a request without moves (the node of a position set up from stones) used to carry no `initialPlayer`, KataGo assumed Black to move, and a set-up position where the teacher continues with White was analysed for the wrong side. The cloud script now states the side to move explicitly for such requests (the same rule as the fix in the local `analyze2.py`: the opposite of the last move on the path; at a setup node the majority colour of the teacher's next moves, a tie goes to Black, no continuation means Black); requests that already carry `initialPlayer` are left alone.
 
 3. **视角错误不能再犯**：桥接服务强制使用 `reportAnalysisWinratesAs=BLACK`，并在每个响应里声明 `bridge.winratesAs`；页面只有看到 BLACK 才会换算成行棋方视角，否则拒绝使用该响应。页面展示的仍然只是“比局部最优差多少目”，绝不展示全盘胜率。
 
@@ -57,43 +61,62 @@ The speed column is estimated from "20 visits/s locally" and community data (one
 
 ## 3. 用法 A：离线批处理（推荐） / Usage A: offline batch (recommended)
 
-**准备工作（本机，只读）**：把要分析的 `g_*.n.json` 打包（不会修改原文件；流水线还在运行时，也可以先把已完成的那部分打包）：
+**云端脚本不再是移植版。** `analyze_remote.py` 对每个分组直接调用 `pipeline/analyze2.py`（笔记本把 `analyze2.py`、`treesync.py`、`wqutil.py` 和两个脚本一起写进工作目录）。所以云端结果与本机结果是同一种文件：行棋方视角（带活的视角自检）、带树指纹的 `_meta`、分叉点和 220 / 100 visits 的规则不变、有窗口限制的请求（管道不会死锁）、检查点（被杀掉之后续跑）。`wq.py check`、`treesync.check_analysis` 和 `orch2.py` 原样接受，不需要 `wq.py stamp`。
 
-**Preparation (local machine, read-only)**: pack the `g_*.n.json` files to analyze (the originals are not modified; you can also pack the finished ones while the pipeline is still running):
+**The cloud script is no longer a port.** `analyze_remote.py` calls `pipeline/analyze2.py` for every group (the notebook writes `analyze2.py`, `treesync.py` and `wqutil.py` into the working directory together with the two scripts). So the cloud result is the same kind of file the local run writes: side-to-move perspective (with the live perspective check), a `_meta` block with the tree fingerprint, the same branch point rules and 220 / 100 visits, a window of requests in flight (the pipe cannot deadlock), a checkpoint (a killed run resumes). `wq.py check`, `treesync.check_analysis` and `orch2.py` accept it as it is, no `wq.py stamp` needed.
+
+**准备工作（本机，只读）**：先看哪些分组还缺分析，再把变化树打成 zip。把本机流水线**最后才轮到**的分组写在前面：云端按这个顺序从列表末尾往前做，本机从列表开头往后做，两边在中间相遇。
+
+**Preparation (local machine, read only)**: first see which groups still lack an analysis, then pack their trees into a zip. Put the groups the local pipeline reaches **last** first: the cloud works through the list from its end towards the front while the local run works from the front, and they meet in the middle.
 
 ```powershell
-Compress-Archive -Path D:\tmp\work\g_*.n.json -DestinationPath $env:USERPROFILE\Desktop\n_json.zip
+python remote\pack_inputs.py --work D:\tmp\work --list-missing
+python remote\pack_inputs.py --work D:\tmp\work --out n_json_20261108.zip --skip-valid <最后轮到的分组> ... <较早轮到的分组>
 ```
 
-权重文件 `kata1-tf3-b11c768-s12752M-d6531M.bin.gz`（262MB）与本机使用的是同一个文件；只需上传一次到 Google Drive 或 Kaggle Dataset。**不要换网络**，否则新旧结果无法比较。
+zip 里只有 `g_<名称>.n.json` 和 `manifest.json`（顺序、节点数、树指纹）。打包前会逐个检查：节点里只能有已知字段（编号、父节点、着法、棋子位置、视频时间戳），出现任何可能装下老师讲解文字的字段或值就拒绝打包；云端运行时再核对树指纹，打包之后变动过的树不会被分析。
 
-The weights `kata1-tf3-b11c768-s12752M-d6531M.bin.gz` (262MB) are the same file the local machine uses; upload it once to Google Drive / a Kaggle Dataset. **Do not switch networks**, otherwise old and new results are not comparable.
+The zip holds only `g_<name>.n.json` and `manifest.json` (order, node counts, tree fingerprints). Every file is checked before packing: a node may only have the known fields (id, parent, move, stone positions, video time stamps), and anything that could hold the teacher's commentary is refused; the cloud run compares the tree fingerprint again, so a tree that changed after packing is not analysed.
+
+权重文件 `kata1-tf3-b11c768-s12752M-d6531M.bin.gz` 与本机用的是同一个文件：262040299 字节，sha256 为 `c470f51078d31051961dfc372aaa3948a3eec0b93ed52075d16f55a2e17b8cec`。笔记本和 `analyze_remote.py` 都会核对这个值，不一致就停下，因为换了网络的结果无法与已有数据比较。
+
+The weights `kata1-tf3-b11c768-s12752M-d6531M.bin.gz` are the same file the local machine uses: 262040299 bytes, sha256 `c470f51078d31051961dfc372aaa3948a3eec0b93ed52075d16f55a2e17b8cec`. The notebook and `analyze_remote.py` both check this value and stop when it differs, because results from another network are not comparable with the existing data.
 
 **Colab 免费版 / Colab free tier**
 
-1. 打开 [colab.research.google.com](https://colab.research.google.com) 并上传 `remote/katago_batch.ipynb`；然后选 *Runtime → Change runtime type → T4 GPU*（即“运行时 → 更改运行时类型”）。
+1. 把 zip 和权重文件放进 Google Drive 的 `MyDrive/josekiapp/`。
 
-   Open [colab.research.google.com](https://colab.research.google.com) and upload `remote/katago_batch.ipynb`; *Runtime → Change runtime type → T4 GPU*.
+   Put the zip and the weights file into `MyDrive/josekiapp/` on Google Drive.
 
-2. 为了避免断线时丢失进度：在第 4 个代码单元格里设置 `USE_DRIVE = True` 并授权 Drive（由你自己确认授权）。
+2. 打开 [colab.research.google.com](https://colab.research.google.com)，上传 `remote/katago_batch.ipynb`，选 *运行时 → 更改运行时类型 → T4 GPU*。
 
-   To avoid losing progress on a disconnect: in the 4th code cell set `USE_DRIVE = True` and authorize Drive (you approve it yourself).
+   Open [colab.research.google.com](https://colab.research.google.com), upload `remote/katago_batch.ipynb` and choose *Runtime → Change runtime type → T4 GPU*.
 
-3. 从上到下依次运行；出现提示时上传输入 zip 和权重（也可以事先放在 `MyDrive/josekiapp/`）。先运行“3 个分叉点的试跑”来确认速度。
+3. 从上到下依次运行。第一个单元格打印 GPU、磁盘和网络情况；输入单元格会请求 Drive 授权（由你自己确认），核对权重的 sha256，并打印将要分析的分组和顺序。先运行“试跑 3 个分叉点”确认整条链路和速度。
 
-   Run from top to bottom; upload the input zip and the weights when prompted (or put them in `MyDrive/josekiapp/`). First run the "trial run on 3 branch points" to check the speed.
+   Run from top to bottom. The first cell prints the GPU, disk and network; the input cell asks for Drive access (you approve it yourself), checks the weights' sha256 and prints the groups and their order. First run the "trial run on 3 branch points" to check the whole chain and the speed.
 
-4. **保持页面打开，人也别走远。** 断线后重新连接并重新运行所有单元格；已完成的分组会自动跳过。
+4. **保持页面打开，人也别走远。** 断线后重新连接并重新运行所有单元格：已完成的分组会跳过，没做完的分组从检查点继续。
 
-   **Keep the page open and stay nearby.** After a disconnect, reconnect and re-run all cells; finished groups are skipped automatically.
+   **Keep the page open and stay nearby.** After a disconnect reconnect and run all cells again: finished groups are skipped and an unfinished group continues from its checkpoint.
 
-5. 最后一个单元格会下载 `a2_results.zip`。解压后把 `g_*.a2.json` 放回 `D:\tmp\work`，再按平时的流程继续（`regen.py` → `tools\build.ps1`）。`orch2.py` 的阶段 B 发现 `g_<name>.a2.json` 已经存在时，会直接使用它并跳过该分组的本地分析，所以云端算出的结果可以原样放进 `D:\tmp\work`，前提是它们所依据的 `n.json` 与本机上的是同一棵变化树。
+5. 最后一个单元格生成并下载 `a2_results.zip`，同时在 Drive 里留一份。只有通过 `treesync.check_analysis` 的文件才会被打进去。
 
-   The last cell downloads `a2_results.zip`. Unpack it, put the `g_*.a2.json` files back into `D:\tmp\work`, and continue with the usual flow (`regen.py` → `tools\build.ps1`). Stage B of `orch2.py` uses an existing `g_<name>.a2.json` as it is and skips the local analysis for that group, so results from the cloud can be dropped into `D:\tmp\work` unchanged, as long as the `n.json` they were made from is the same tree as the local one.
+   The last cell builds and downloads `a2_results.zip` and leaves a copy on Drive. Only files that pass `treesync.check_analysis` are packed.
 
-**Kaggle**：新建一个 Notebook，在右侧面板的 Accelerator 里选一块 GPU，并打开 Internet（需要手机验证）；把 n.json 文件和权重分别做成 Dataset 并添加进来；导入同一个 `.ipynb`；用 *Save & Run All* 可以在后台无人值守地运行，结果可从 Output 下载。
+**Kaggle**：新建一个 Notebook，导入同一个 `.ipynb`；在 *Session options* 里选一块 GPU（优先 T4），并打开 Internet（需要手机验证；下载 KataGo 要用）；把 zip 和权重文件分别做成**私有** Dataset 并添加进来；用 *Save & Run All* 可以在后台无人值守地运行，结果在该版本的 Output 里下载。
 
-**Kaggle**: create a new Notebook, choose a GPU as Accelerator in the right-hand panel, and turn Internet on (phone verification required); make the n.json files and the weights into Datasets and add them; import the same `.ipynb`; *Save & Run All* runs unattended in the background and the results can be downloaded from Output.
+**Kaggle**: create a new Notebook and import the same `.ipynb`; in *Session options* choose a GPU (T4 first) and switch Internet on (phone verification required; KataGo is downloaded); make the zip and the weights file into **private** Datasets and add them; *Save & Run All* runs unattended in the background and the results are downloaded from the Output of that version.
+
+**结果放回本机**：解压 `a2_results.zip` 到一个临时文件夹，只复制 `D:\tmp\work` 里还没有的 `g_*.a2.json`（已有的不要覆盖，本机和云端的数值在 GPU 之间会有微小差异），然后对每个分组运行 `wq.py check`，状态必须是 `analysis: ok`。`orch2.py` 轮到某个分组时发现它已有有效的 `a2.json`，就直接使用并跳过本机分析；需要立即重建 SGF 时运行 `regen.py --only <分组名>`。
+
+**Putting the results back**: unpack `a2_results.zip` into a temporary folder and copy only the `g_*.a2.json` files that `D:\tmp\work` does not have yet (never overwrite an existing one; local and cloud numbers differ slightly between GPUs), then run `wq.py check` for each group; the status must be `analysis: ok`. When `orch2.py` reaches a group that already has a valid `a2.json` it uses it and skips the local analysis; to rebuild an SGF at once run `regen.py --only <group name>`.
+
+```powershell
+python -m zipfile -e a2_results.zip stage
+Get-ChildItem stage\g_*.a2.json | ForEach-Object { if (-not (Test-Path "D:\tmp\work\$($_.Name)")) { Copy-Item $_.FullName D:\tmp\work\ } else { "exists, skipped: $($_.Name)" } }
+python D:\tmp\work\wq.py check <分组名>
+```
 
 **Slurm（LRZ 等）**：见 `slurm_analyze.sbatch` 开头的注释。简单说：先在登录节点用 `setup_katago.py` 把所有东西下载好，让作业只读本地文件；把分区名和容器镜像换成你所在集群的。**这只是模板，没有在真实硬件上验证过。**
 
@@ -103,9 +126,9 @@ The weights `kata1-tf3-b11c768-s12752M-d6531M.bin.gz` (262MB) are the same file 
 
 **How to get LRZ access** (official docs): you need an LRZ account **and** membership in a project with AI Systems enabled; TUM/LMU student accounts by default only get services such as mail and cloud storage, not the high-performance systems. Ways in: ask your course / Praktikum / thesis supervisor, whose LRZ project administrator (Master User) can add you; or apply through BayernKI. Submit a service request "AI topics → LRZ AI Systems - Request for Access" and state the purpose. Logging in to `login.ai.lrz.de` requires being inside the Munich Scientific Network or using the VPN.
 
-**参数**：`--visits 220 --forced 100` 与本机基准一致；GPU 足够强时可以加 `--threads 3` 提速，但不要改 visits（否则结果无法与旧数据比较）。GPU/FP16 算出的数值与核显的并不逐位相同，这属于正常波动。
+**参数**：`--visits 220 --forced 100` 与本机基准一致；GPU 足够强时可以加 `--threads 3` 提速，但不要改 visits（否则结果无法与旧数据比较）。GPU/FP16 算出的数值与核显的并不逐位相同，这属于正常波动。`--window`（同时在途的请求数，默认 8）、`--stall`（多久没有答复就放弃，默认 900 秒）和 `--start-timeout`（等第一个答复的时间，默认 600 秒，冷启动时 CUDA 内核要编译）可以调整。
 
-**Parameters**: `--visits 220 --forced 100` match the local baseline; on a strong GPU you can add `--threads 3` for more speed, but do not change visits (otherwise results are not comparable with the old data). GPU/FP16 numbers are not bit-identical to the integrated GPU's; that is normal fluctuation.
+**Parameters**: `--visits 220 --forced 100` match the local baseline; on a strong GPU you can add `--threads 3` for more speed, but do not change visits (otherwise results are not comparable with the old data). GPU/FP16 numbers are not bit-identical to the integrated GPU's; that is normal fluctuation. `--window` (queries in flight, default 8), `--stall` (seconds without an answer before giving up, default 900) and `--start-timeout` (wait for the first answer, default 600 seconds, because CUDA kernels are compiled on a cold start) can be changed.
 
 ## 4. 用法 B：页面里的“算力”开关（可选，实时分析） / Usage B: the "compute" switch in the page (optional, real-time analysis)
 
@@ -226,14 +249,15 @@ Sources are listed at the end; the current wording of the official pages is what
 
 | 文件 / File | 用途 / Purpose |
 |---|---|
-| `analyze_remote.py` | `analyze2.py` 的移植版，加上断点续跑和多分组循环；输出 `g_<name>.a2.json` 和 `.a2.meta.json` / Port of `analyze2.py` + resume + loop over several groups; outputs `g_<name>.a2.json` + `.a2.meta.json` |
-| `setup_katago.py` | 下载 Linux GPU 版 KataGo（默认 v1.18.2 + cuda12.1-cudnn9.8.0），用 `ldd` 检查依赖，并把缺失的 CUDA 库用 pip 装到单独的目录 / Downloads the Linux GPU build of KataGo (default v1.18.2 + cuda12.1-cudnn9.8.0), checks with `ldd`, and pip-installs missing CUDA libraries into a separate directory |
-| `katago_batch.ipynb` / `make_notebook.py` | 同时适用于 Colab 和 Kaggle 的笔记本（内嵌上面两个脚本）；修改脚本后用 `python make_notebook.py` 重新生成 / Notebook for both Colab and Kaggle (embeds the two scripts above); after changing a script, regenerate with `python make_notebook.py` |
+| `analyze_remote.py` | 云端批处理循环：对每个分组调用 `pipeline/analyze2.py`，按 manifest 排序，跳过已有的有效结果，检查权重 sha256；输出 `g_<name>.a2.json`、`.a2.meta.json`（用时、每查询秒数、KataGo 版本、权重哈希）和 `run_summary.json` / Cloud batch loop: calls `pipeline/analyze2.py` for every group, orders by manifest, skips valid results, checks the weights sha256; outputs `g_<name>.a2.json`, `.a2.meta.json` (seconds, seconds per query, KataGo version, weights hash) and `run_summary.json` |
+| `pack_inputs.py` | 把变化树打成 `n_json_<日期>.zip`（只读；检查里面没有任何可能装下讲解文字的字段；写入 manifest 的顺序、节点数和树指纹）；`--list-missing` 列出缺分析的分组 / Packs the variation trees into `n_json_<date>.zip` (read only; checks that nothing could carry commentary; writes the order, node counts and tree fingerprints into a manifest); `--list-missing` lists the groups without an analysis |
+| `setup_katago.py` | 下载 Linux GPU 版 KataGo（默认 v1.18.2 + cuda12.1-cudnn9.8.0），用发布页公布的 sha256 校验下载，用 `ldd` 检查依赖，并把缺失的 CUDA 库用 pip 装到单独的目录 / Downloads the Linux GPU build of KataGo (default v1.18.2 + cuda12.1-cudnn9.8.0), checks the download against the sha256 published on the release page, checks with `ldd`, and pip-installs missing CUDA libraries into a separate directory |
+| `katago_batch.ipynb` / `make_notebook.py` | 同时适用于 Colab 和 Kaggle 的笔记本（内嵌 `treesync.py`、`wqutil.py`、`analyze2.py`、`analyze_remote.py`、`setup_katago.py`）；修改其中任何一个后用 `python remote/make_notebook.py` 重新生成，测试会检查笔记本是否过期 / Notebook for both Colab and Kaggle (embeds `treesync.py`, `wqutil.py`, `analyze2.py`, `analyze_remote.py` and `setup_katago.py`); after changing any of them regenerate with `python remote/make_notebook.py`, a test checks that the notebook is current |
 | `slurm_analyze.sbatch` | Slurm 批处理模板（未在真实硬件上验证） / Slurm batch template (not verified on real hardware) |
 | `katago_bridge.py` | 可选：把 KataGo 分析暴露为 HTTP 接口（令牌 + CORS + 参数校验）；`--fake` 让你不用 GPU 也能试用界面 / Optional: KataGo analysis → HTTP (token + CORS + validation); `--fake` lets you try the UI without a GPU |
 | `start_bridge.ps1` / `start_bridge.sh` | 启动脚本（Windows / macOS、Linux）：在本机寻找 KataGo 和网络并启动桥接服务；`-PrintSetup` / `--print-setup` 只打印需要你提供的内容 / Launchers (Windows / macOS, Linux): find KataGo and a network on this computer and start the bridge; `-PrintSetup` / `--print-setup` prints only what you must provide |
 | `engine-config/` | 配置示例：GPU、CPU，以及允许列表 `models.example.json`（都只是起点，请先运行 `katago benchmark` 再调整） / Config examples: GPU, CPU, and the allowlist `models.example.json` (only starting points, run `katago benchmark` and adjust) |
-| `selftest.py` | 无需 GPU 的自检（模拟引擎）：视角换算、区域、强制评估、断点续跑、与 `analyze2.py` 对比、桥接服务的校验/认证/CORS，以及在本机回环 socket 上的流式输出、终止、切换网络和启动脚本 / GPU-free self-test (fake engine): perspective conversion, region, forced evaluation, resume, comparison with `analyze2.py`, bridge validation/auth/CORS, and on a loopback socket the stream, terminate, network switch and the launcher |
+| `selftest.py` | 无需 GPU 的自检（模拟引擎）：云端批处理的输出通过 `treesync.check_analysis`、桥接服务的校验/认证/CORS，以及在本机回环 socket 上的流式输出、终止、切换网络和启动脚本。云端批处理更深入的测试（被杀掉后续跑、笔记本单元格、打包）在 `tests/test_remote_batch.py` / GPU-free self-test (fake engine): the cloud batch output passes `treesync.check_analysis`, bridge validation/auth/CORS, and on a loopback socket the stream, terminate, network switch and the launcher. The deeper cloud batch tests (resume after a kill, notebook cells, packing) are in `tests/test_remote_batch.py` |
 
 ## 7. 排障 / Troubleshooting
 
@@ -273,19 +297,47 @@ Sources are listed at the end; the current wording of the official pages is what
 
   **Scores look systematically positive/negative**: first look at "color = side to move" in the caption bar; both offline and live data use the side-to-move perspective, not Black's.
 
+- **笔记本第一个单元格报 `No GPU`**：运行时没有 GPU。Colab 选 T4；Kaggle 在 Session options 里选 Accelerator。
+
+  **The first cell says `No GPU`**: the runtime has no GPU. Choose a T4 on Colab; choose an Accelerator under Session options on Kaggle.
+
+- **输入单元格说权重的 sha256 不对**：上传的不是本机用的那个文件（或者上传被截断了）。本机文件应为 262040299 字节，sha256 为 `c470f51078d31051961dfc372aaa3948a3eec0b93ed52075d16f55a2e17b8cec`；在 PowerShell 里用 `Get-FileHash` 核对本机文件，再重新上传。Kaggle 如果把 `.gz` 当作压缩包处理，可以把 `.bin.gz` 放进一个 zip 再上传，笔记本会从 zip 里取出来。
+
+  **The input cell says the weights' sha256 is wrong**: the uploaded file is not the one the local machine uses (or the upload was cut short). The local file should be 262040299 bytes with sha256 `c470f51078d31051961dfc372aaa3948a3eec0b93ed52075d16f55a2e17b8cec`; check the local file with `Get-FileHash` in PowerShell and upload again. If Kaggle treats the `.gz` as an archive, put the `.bin.gz` into a zip and upload that; the notebook takes it out of the zip.
+
+- **`0 input groups` / `No g_*.n.json found`**：zip 不在笔记本会找的地方（工作目录、`MyDrive/josekiapp/`、`/kaggle/input/*/`），或者被改了名（manifest 只从文件名含 `n_json` 的 zip 里读取）。组名含中文，如果 Kaggle 解压后文件名乱码，就改用 Colab，或者把 zip 再套一层 zip 上传。
+
+  **`0 input groups` / `No g_*.n.json found`**: the zip is not where the notebook looks (working directory, `MyDrive/josekiapp/`, `/kaggle/input/*/`) or was renamed (the manifest is only read from a zip whose name contains `n_json`). The group names contain Chinese; if Kaggle unpacks them with garbled names, use Colab or upload the zip wrapped in another zip.
+
+- **`no answer from KataGo for 600 s` 或 `KataGo exited`**：看输出目录里 `g_<名称>.a2.json.err`（KataGo 自己的日志）。冷启动要加载网络并编译 CUDA 内核，慢一点是正常的；重新运行同一个单元格会从检查点继续。
+
+  **`no answer from KataGo for 600 s` or `KataGo exited`**: look at `g_<name>.a2.json.err` in the output folder (KataGo's own log). A cold start loads the network and compiles CUDA kernels, so it can be slow; running the same cell again continues from the checkpoint.
+
+- **某个分组的状态是 `suspect`**：分数看起来是黑棋视角（第一个候选点不是最好的）。这个文件会被改名为 `.suspect`，不会被打包。把 `.err` 文件和环境信息贴回来，不要手工改文件。
+
+  **A group has the status `suspect`**: the scores look like Black's perspective (the first candidate is not the best one). The file is renamed to `.suspect` and is not packed. Send back the `.err` file and the environment block, and do not edit the file by hand.
+
+- **`changed after packing`**：本机上的变化树在打包之后变了（比如这个分组又有新的视频完成了），旧的树不能再用。重新运行 `pack_inputs.py`。
+
+  **`changed after packing`**: the local tree changed after the zip was made (for example another video of the group finished). The old tree must not be used. Run `pack_inputs.py` again.
+
 ## 8. 已验证与未验证的内容 / What was verified / what was not
 
-已验证：`selftest.py` 全部通过（模拟引擎；与 `analyze2.py` 逐字节相同；桥接服务的校验 / 认证 / CORS / HTTP 处理在内存流上运行正确）；页面的默认行为没有变化，控制台没有报错；页面的连接测试、分析、试下、失败回退和视角声明检查，在**页内 fetch 桩（模拟的桥接服务）**上运行正确，候选点的颜色、正负号和强制评估都符合预期；真实地址连不上时，约 3 秒后给出提示并回退到缓存。
+已验证：`selftest.py` 全部通过（模拟引擎；云端批处理的输出通过 `treesync.check_analysis`；桥接服务的校验 / 认证 / CORS / HTTP 处理在内存流上运行正确）；页面的默认行为没有变化，控制台没有报错；页面的连接测试、分析、试下、失败回退和视角声明检查，在**页内 fetch 桩（模拟的桥接服务）**上运行正确，候选点的颜色、正负号和强制评估都符合预期；真实地址连不上时，约 3 秒后给出提示并回退到缓存。
 
-Verified: `selftest.py` passes completely (fake engine; byte-for-byte identical with `analyze2.py`; the bridge's validation / auth / CORS / HTTP handling runs correctly on in-memory streams); the page's default behaviour is unchanged with no console errors; the page's connection test, analysis, trial moves, failure fallback, and perspective-declaration check run correctly against an **in-page fetch stub (a simulated bridge)**, with candidate-point colors / signs / forced evaluations as expected; an unreachable real address → a message and fallback to the cache after about 3 seconds.
+Verified: `selftest.py` passes completely (fake engine; the cloud batch output passes `treesync.check_analysis`; the bridge's validation / auth / CORS / HTTP handling runs correctly on in-memory streams); the page's default behaviour is unchanged with no console errors; the page's connection test, analysis, trial moves, failure fallback, and perspective-declaration check run correctly against an **in-page fetch stub (a simulated bridge)**, with candidate-point colors / signs / forced evaluations as expected; an unreachable real address → a message and fallback to the cache after about 3 seconds.
+
+云端批处理另外已验证（Docker，`tests/test_remote_batch.py`，模拟引擎）：笔记本的真实单元格按顺序运行，输出被 `wq.py check` 和 `orch2.py` 原样接受；错误的视角设置会被发现且不会被打包；被 SIGKILL 杀掉的运行从检查点续跑，已有答案不会重问；清单顺序、树指纹核对、已有有效结果的跳过和过期结果的替换；权重 sha256 核对；笔记本里没有隧道、服务或保活代码。
+
+Also verified for the cloud batch (Docker, `tests/test_remote_batch.py`, fake engine): the real notebook cells run in order and their output is accepted by `wq.py check` and `orch2.py` as it is; a wrong perspective setting is caught and never packed; a run killed with SIGKILL resumes from its checkpoint without asking again for answers it has; manifest order, the tree fingerprint check, skipping a valid result and replacing a stale one; the weights sha256 check; no tunnel, server or keep-alive code in the notebook.
 
 桥接服务 v2 另外已验证：在 Docker（python:3.12-slim）里，`selftest.py` 在本机回环 socket 上检查了分块 NDJSON 流、终止、客户端断开、单一搜索的取代规则、时间上限、模型允许列表（路径永远不会出现在响应里）、`/switch` 的进度与回滚，以及 `start_bridge.sh`（用一个模拟的 KataGo 外壳脚本）。`start_bridge.ps1` 只检查了语法，以及找不到可用 Python 时的提示；它没有完整运行过。
 
 Also verified for bridge v2: in Docker (python:3.12-slim), `selftest.py` checks on a loopback socket the chunked NDJSON stream, terminate, a client disconnect, the single-search preemption rule, the time cap, the model allowlist (a path never appears in a response), the progress and rollback of `/switch`, and `start_bridge.sh` (with a pretend KataGo wrapper script). `start_bridge.ps1` was only syntax-checked and run as far as the "no usable Python" message; it has not been run end to end.
 
-**未验证**：真实的 KataGo、真实的 GPU、在 Colab/Kaggle/LRZ 上的实际运行（没有账号，而且按要求没有运行 KataGo）；`setup_katago.py` 在各云端镜像上的库兼容性；各个加速倍数（都是估算）；经过 SSH 端口转发、反向代理或厂商端口映射的连接；真实 KataGo 对 `reportDuringSearchEvery` 与 `terminate` 的行为（只对照了官方文档，没有实际运行）；`katago version` 输出的后端行；Slurm 模板；浏览器 WebGPU 方案也没有试过。
+**未验证**：真实的 KataGo、真实的 GPU、在 Colab/Kaggle/LRZ 上的实际运行（没有账号，而且按要求没有运行 KataGo）；Colab 和 Kaggle 当前界面上各个按钮的名称与位置、Kaggle 对 zip 和 `.gz` 的自动解压行为、Drive 挂载下检查点的读写速度、冷启动要等多久；KataGo 下载包的 sha256 来自 GitHub 发布页的数据，没有下载过；`setup_katago.py` 在各云端镜像上的库兼容性；各个加速倍数（都是估算）；经过 SSH 端口转发、反向代理或厂商端口映射的连接；真实 KataGo 对 `reportDuringSearchEvery` 与 `terminate` 的行为（只对照了官方文档，没有实际运行）；`katago version` 输出的后端行；Slurm 模板；浏览器 WebGPU 方案也没有试过。
 
-**Not verified**: a real KataGo, a real GPU, actual runs on Colab/Kaggle/LRZ (no accounts, and as requested KataGo was not run); library compatibility of `setup_katago.py` on the cloud images; the speed-up factors (all estimates); connections through SSH port forwarding, a reverse proxy or a vendor port mapping; how a real KataGo behaves with `reportDuringSearchEvery` and `terminate` (checked against the official documentation only, not run); the backend line of the `katago version` output; the Slurm template; the browser WebGPU option was not tried.
+**Not verified**: a real KataGo, a real GPU, actual runs on Colab/Kaggle/LRZ (no accounts, and as requested KataGo was not run); the current names and positions of the buttons on the Colab and Kaggle pages, how Kaggle unpacks zip and `.gz` uploads, the speed of checkpoint writes on a mounted Drive, how long a cold start takes; the sha256 values of the KataGo downloads come from the GitHub release data and nothing was downloaded; library compatibility of `setup_katago.py` on the cloud images; the speed-up factors (all estimates); connections through SSH port forwarding, a reverse proxy or a vendor port mapping; how a real KataGo behaves with `reportDuringSearchEvery` and `terminate` (checked against the official documentation only, not run); the backend line of the `katago version` output; the Slurm template; the browser WebGPU option was not tried.
 
 ## 来源（访问日期 2026-11-01） / Sources (accessed 2026-11-01)
 
