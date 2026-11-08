@@ -1,10 +1,13 @@
-"""Helper commands for the pipeline. Nothing here starts a download, whisper or KataGo.
+"""Helper commands for the pipeline. Nothing here starts a download or whisper, and KataGo only for `fix-setup-turns --apply`.
 
   python wq.py status   [--work DIR]            one line per group (tree, analysis, notes, SGF), failed videos, running analysis
   python wq.py check    NAME [--work DIR]       compare the saved tree of a group with its a2.json and kp file
   python wq.py stamp    NAME [--work DIR]       write the tree fingerprint into an a2.json / kp file made before fingerprints existed
   python wq.py validate PATH [PATH ...]         SGF checks (parentheses, AN/PL, coordinates); globs allowed; exit 1 on problems
   python wq.py fix-check [fixdict.json]         check the typo dictionary (same as mkfix.py check)
+  python wq.py fix-setup-turns [--work DIR] [--dry-run | --apply] [--only NAME ...] [--backup-dir DIR]
+                                                list the set-up positions that were analysed for the wrong side; --apply redoes
+                                                only those nodes with KataGo (the one command here that starts the engine)
 
 --work defaults to env WEIQI_WORK, then D:\\tmp\\work.
 """
@@ -67,7 +70,10 @@ def cmd_check(a):
     kp = read_json(os.path.join(W, 'kp_%s.json' % safe(a.name)), default=None)
     out, kst, kmsg, _ = ts.check_kp(N, kp)
     print('key points:', kst, kmsg, '(%d notes usable)' % len(out))
-    return 0 if st in ts.USABLE and kst in ('ok', 'legacy', 'missing', 'remapped') else 1
+    from analyze2 import wrong_turns   # incident 12: a set-up position analysed for the other side
+    bad = wrong_turns(N, read_json(base + '.a2.json', default={}))
+    print('side to move:', 'ok' if not bad else 'WRONG at %d entries (%s), run wq.py fix-setup-turns' % (len(bad), ', '.join(bad[:8])))
+    return 0 if st in ts.USABLE and kst in ('ok', 'legacy', 'missing', 'remapped') and not bad else 1
 
 
 def cmd_stamp(a):
@@ -118,6 +124,11 @@ def cmd_fix_check(a):
     return mkfix.main(['check'] + ([a.dict] if a.dict else []))
 
 
+def cmd_fix_setup_turns(a):
+    import fixturns   # imports analyze2, so only when needed
+    return fixturns.run(work(a), apply=a.apply, backup_dir=a.backup_dir, only=a.only or ())
+
+
 def main(argv=None):
     setup_stdio()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -134,6 +145,14 @@ def main(argv=None):
     p = sub.add_parser('fix-check')
     p.add_argument('dict', nargs='?', help='fixdict.json to check (default: the one next to this script)')
     p.set_defaults(fn=cmd_fix_check)
+    p = sub.add_parser('fix-setup-turns', help='list (default) or redo set-up positions analysed for the wrong side')
+    p.add_argument('--work')
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument('--dry-run', action='store_true', help='only list what is wrong, the default')
+    mode.add_argument('--apply', action='store_true', help='ask KataGo again about those nodes and write the corrected a2.json (backup first)')
+    p.add_argument('--only', nargs='*', help='group names (default: all groups of the work folder)')
+    p.add_argument('--backup-dir', help='where the original a2.json files go (default <work>/backup_a2_initplayer)')
+    p.set_defaults(fn=cmd_fix_setup_turns)
     a = ap.parse_args(argv)
     return a.fn(a)
 
