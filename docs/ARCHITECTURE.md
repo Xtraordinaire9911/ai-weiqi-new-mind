@@ -675,3 +675,291 @@ Guards can only stop what is "obviously bad": an SGF that passes validation can 
 | `tools/fetch_playlists.ps1` | 向 B 站的合集接口取视频清单，生成 `index.json` / Fetches the video list from Bilibili's playlist endpoint and writes `index.json` | 加新作者时用 / Used when adding a new author |
 | `tools/local_analyze.ps1` | 手工对一个局面在指定矩形里问一次 KataGo / Asks KataGo about one position inside a given rectangle by hand | 调试用 / For debugging |
 | `remote/analyze_remote.py` 等 / and the rest of `remote/` | 在更强的远程显卡上批量跑同样的分析，输出格式与 `a2.json` 相同，可以直接放回工作目录 / Runs the same analysis in batch on a stronger remote GPU, with the same output format as `a2.json`, so it can be put straight back into the work folder | 没有在真实云平台上跑过 / Never run on a real cloud platform **[未核实 / not verified]** |
+
+## 3. 查看器 / The viewer
+
+查看器是用户真正看到的东西：一个网页，双击 `index.html` 就能在浏览器里离线使用，不需要服务器、不需要安装。这一节按功能一项一项讲，每项给出文件和代码块的位置（`index.html` 的行号都是 `9fa1fcd` 里的大致位置）。
+
+The viewer is what the user really sees: a web page that works offline in the browser when you double click `index.html`, with no server and no installation. This section goes through it feature by feature, giving the file and the block of code for each (the line numbers of `index.html` are approximate positions in `9fa1fcd`).
+
+### 3.1 架构 / Architecture
+
+页面没有用任何框架，也没有构建步骤：就是几个 JS 文件按顺序加载，共用浏览器里的全局变量。这样做的好处是"双击就能用"，代价是模块之间靠约定而不是靠接口耦合，所以改动时要格外小心（后面会看到测试怎样替我们守住底线）。加载顺序见 `index.html` L30 和 L39-40、L362：
+
+The page uses no framework and has no build step: just a few JS files loaded in order that share the browser's global variables. The benefit is "double click and it works", the price is that the modules are coupled by convention rather than by interfaces, so changes need extra care (you will see below how the tests hold the line for us). The load order is in `index.html` L30, L39-40 and L362:
+
+1. `mobile.js`（在 `<head>` 里，手机布局）/ in `<head>`, the phone layout
+2. `data/library.js`（定义 `window.LIB` 和 `window.LIBT`）/ defines `window.LIB` and `window.LIBT`
+3. `engine_core.js`、`engine_net.js`、`engine_panel.js`、`pwa.js`
+4. 内联脚本一（L41-280）：SGF 解析、回放、画棋盘、悬停、评论面板 / inline script one (L41-280): SGF parsing, replay, board drawing, hover, comment panel
+5. 内联脚本二（L281-361）：算力开关 `window.RC` / inline script two (L281-361): the compute switch `window.RC`
+6. `quiz_core.js`、`quiz.js`：训练模式 / quiz mode
+
+```mermaid
+flowchart TD
+  LIB["data/library.js 里的 window.LIB"] --> CORE["index.html 内联脚本一 解析 回放 画棋盘 悬停 评论"]
+  CORE --> RC["index.html 内联脚本二 RC 算力开关"]
+  CORE --> QZ["quiz_core.js 和 quiz.js 训练模式"]
+  CORE --> MOB["mobile.js 手机布局与长按"]
+  RC --> NET["engine_net.js 唯一联网的文件"]
+  PANEL["engine_panel.js KataGo 继续推演卡片"] --> ECORE["engine_core.js 纯逻辑 状态机"]
+  PANEL --> NET
+  PANEL --> RC
+  NET -.-> BRIDGE["remote/katago_bridge.py 桥接服务"]
+  BRIDGE --> KG["你自己的 KataGo"]
+  PWA["pwa.js"] --> SW["sw.js 离线缓存"]
+```
+
+图：页面中心是 index.html 的两段脚本；只有 engine_net.js 会联网，而且只在你选了本机或远程之后（虚线）。
+
+Figure: the centre is the two scripts of index.html; only engine_net.js touches the network, and only after you choose local or remote (dotted line).
+
+数据结构只有一个：`LIB` 是一个数组，每项是 `{id, source, sourceName, series, name, videos: [{bvid, title}], sgf}`，其中 `sgf` 是整份 SGF 文本。页面启动时（L272-279）按"来源"和"系列"把它们排成左边的列表，并默认打开 SGF 最长的那个（也就是内容最丰富的）。页面顶部的小字显示"界面 v4.7 · 数据 11-01 05:18"（L278），前者是代码版本（`VIEWER_VER`，L254），后者是 `library.js` 的生成时间；如果还有分组没填内容，会出现一条黄色提示"内容生成中：已完成 D/M 个定式"（SGF 超过 1500 个字符算"已完成"）。这两处是为了不再让用户看到旧页面而不自知（第 4 节）。
+
+There is a single data structure: `LIB` is an array whose items are `{id, source, sourceName, series, name, videos: [{bvid, title}], sgf}`, where `sgf` is the whole SGF text. At startup (L272-279) the page arranges them into the list on the left by "source" and "series" and opens the longest SGF by default (the richest in content). The small text at the top shows "界面 v4.7 · 数据 11-01 05:18" (L278): the first is the code version (`VIEWER_VER`, L254), the second is the generation time of `library.js`. If some groups are still unfilled, a yellow notice "内容生成中：已完成 D/M 个定式" appears (an SGF longer than 1500 characters counts as "done"). These two are there so the user never again looks at an old page without knowing it (section 4).
+
+### 3.2 SGF 解析与回放 / SGF parsing and replay
+
+**解析 / Parsing。** `parse(s)`（L43-48）是一个很小的递归解析器：遇到 `(` 就开一个新的变化，遇到 `;` 就新建一个节点 `{p: {属性: [值]}, c: [子节点], up: 父节点}`，读属性名和方括号里的值，值里的 `\` 是转义。因为项目生成的 SGF 只用到有限的几种语法，所以这个解析器很短；标准的 SGF 工具（Lizzie、Sabaki、KataGo GUI）也能打开这些文件。
+
+`parse(s)` (L43-48) is a very small recursive parser: a `(` opens a new variation, a `;` creates a new node `{p: {property: [values]}, c: [children], up: parent}`, and it reads property names and the values in square brackets, where `\` escapes. Because the SGFs this project generates use only a few kinds of syntax, the parser is short, and standard SGF tools (Lizzie, Sabaki, KataGo GUI) can open these files too.
+
+**回放 / Replay。** `replay(node)`（L52-59）从根节点一路走到当前节点，在一块 19 乘 19 的空棋盘上重新下一遍：先处理摆放（`AB` 黑、`AW` 白、`AE` 清空；`expand()` 负责把 `aa:cc` 这样的范围展开），再处理落子（`B`、`W`），并且给每一手编号。落子之后，检查四个邻居里对方的棋子：如果某块对方棋子已经没有气，就把它整块拿掉，这就是**提子**；然后检查自己这块有没有气，没有就也拿掉（自杀）。判断一块棋有几口气，用的是"从一个点出发把同色相连的点都找出来，数它们旁边有几个空点"（`grp()`，L54），像沿着一串相连的棋子摸一圈，数周围有几个空位。回放返回棋盘 `b`、手数编号 `num`、最后一手 `last` 和手数 `k`。
+
+`replay(node)` (L52-59) walks from the root to the current node and replays it on an empty 19 by 19 board: first the setups (`AB` black, `AW` white, `AE` clear; `expand()` unfolds ranges such as `aa:cc`), then the moves (`B`, `W`), and numbers every move. After a move it checks the four neighbours for opposing stones: if an opposing group has no liberty left it is removed as a whole, which is a **capture**; then it checks whether its own group has a liberty and removes it if not (suicide). To count the liberties of a group it "starts from one point, finds all connected points of the same colour and counts the empty points next to them" (`grp()`, L54), like feeling along a chain of connected stones and counting the empty spaces around it. The replay returns the board `b`, the move numbers `num`, the last move `last` and the count `k`.
+
+这个回放按"记录里怎么写就怎么走"，不检查打劫规则。`replay()` 在 `quiz_core.js` 里有一份刻意复制的版本（因为那个文件要能在 Node 里单独测试），两份必须保持一致，但目前没有一条测试直接把它们放在一起比较，只有各自的测试（`tests/quiz_core.test.js` 里有"回放会提子并计手数"）**[未核实：两份是否一直一致]**。
+
+The replay does "what the record says" and does not check the ko rule. `quiz_core.js` has a deliberately copied version of `replay()` (because that file has to be testable on its own in Node), the two must stay the same, but no test compares them directly, there are only tests for each (`tests/quiz_core.test.js` has "replay captures stones and counts moves") **[not verified: whether the two have always been identical]**.
+
+### 3.3 画棋盘与视角 / Drawing the board and view modes
+
+**画什么 / What is drawn。** `drawBoard()`（L142-178）是整个查看器最大的一个函数，每次状态变化都重画一遍。顺序是：确定要显示的范围和格子大小；画木色背景、网格线、星位的黑点、四周的坐标；画棋子（半透明或不透明）和手数；画最后一手的红圈；然后依次叠加 AI 候选点（3.4）、老师的蓝圈（3.5）、鼠标悬停时的预览（3.5、3.6）、评论里点选的高亮、外围棋子的光环；最后让训练模式（`QZ.over`）和说明条再画一层。"状态"都是全局变量：`cur`（当前节点）、`tree`、`col`（当前的棋谱集合）、`view`（显示范围）等，所以重画就是"根据这些变量从头画一遍"。
+
+`drawBoard()` (L142-178) is the biggest function of the viewer and redraws everything on every state change. The order is: decide the area and the cell size; draw the wooden background, the grid lines, the black dots of the star points, the coordinates around; draw the stones (translucent or opaque) and move numbers; draw the red ring on the last move; then layer on the AI candidates (3.4), the teacher's blue circles (3.5), the hover preview (3.5, 3.6), the highlights picked from the comment and the halo around outer stones; finally quiz mode (`QZ.over`) and the caption bar draw one more layer. The "state" is all in global variables: `cur` (the current node), `tree`, `col` (the current collection), `view` (the shown area) and so on, so redrawing means "draw everything again from these variables".
+
+**视角三档 / Three view modes。** 底部按钮"视角"在三档之间轮换（`VM = ['自动', '聚焦', '全盘']`，L69、L270）。"聚焦"只显示讲解涉及的那一块：`bbox(root)`（L62-66）取这棵树里所有棋子坐标的第 3% 到 97% 分位加 2 路，靠边就贴边，再调成接近正方形，和 `analyze2.region()` 是同一个思路。"全盘"显示整个棋盘。"自动"的规则是：平时显示聚焦，但当前评论提到了需要看外围的内容，就切到全盘。判断"提到了外围"的是 `ctxInfo()`（L73-75）：它找出不在左下角局部窗口（`LOC = {x1: 10, y0: 8}`，L69）里的所有棋子，再看评论里有没有出现关键词（`KW`，L70：征子、厚势、外势、接应、配合、对角、一路、二路、三路、上方、下方、左边、右边、右下、右上、左上、劫材）或者这些外围棋子的坐标；有的话，外围的棋子会被画上一圈脉动的橙色光环（L172，动画限制在每秒约 30 帧，页面隐藏时停止），评论里点名的区域（`REG`，L71，例如"右下"）会被橙色虚线框起来。这样当老师说"这里要考虑右下的接应"时，视线会被带到对应的位置。
+
+The "view" button at the bottom cycles through three modes (`VM = ['自动', '聚焦', '全盘']`, L69, L270). "Focus" shows only the part the lesson is about: `bbox(root)` (L62-66) takes the 3rd to 97th percentile of all stone coordinates of the tree plus 2 lines, snaps to the edge when close and adjusts to a near square, the same idea as `analyze2.region()`. "Whole board" shows the entire board. The rule of "auto" is: normally focus, but switch to the whole board when the current comment mentions something outside. `ctxInfo()` (L73-75) decides "mentions something outside": it finds all stones outside the local window in the lower left (`LOC = {x1: 10, y0: 8}`, L69), then checks whether the comment contains keywords (`KW`, L70: 征子, 厚势, 外势, 接应, 配合, 对角, 一路, 二路, 三路, 上方, 下方, 左边, 右边, 右下, 右上, 左上, 劫材) or the coordinates of those outer stones. If so, the outer stones get a pulsing orange halo (L172, the animation limited to about 30 frames per second and stopped when the page is hidden) and the areas named in the comment (`REG`, L71, for example "右下") are framed with an orange dashed box. So when the teacher says "consider the support in the lower right here", the eye is led to the right place.
+
+**限制 / Limit。** `LOC` 默认老师的讲解都在棋盘的左下角：陈林涛的视频确实把定式摆在左下角（流水线最初的默认区域也是左下），但如果将来加入摆在别的角的讲解，"周边"判断会出错 **[代码阅读，没有用别的角测试过]**。
+
+`LOC` assumes the teacher's lessons are all in the lower left corner of the board. The videos of 陈林涛 do put the joseki in the lower left (the pipeline's first default region was also the lower left), but if a lesson in another corner is added later, the "surrounding" judgement would be wrong **[code reading, never tested with another corner]**.
+
+### 3.4 AI 候选点 / AI candidates
+
+**数据从哪来 / Where the data comes from。** 当前节点的候选数据是 `anOf(n)`（L101）：如果算力开关里有实时结果（3.9）就用实时的，否则用 SGF 里缓存的 `AN` 属性；只有"有后续的节点"才显示（叶子节点没有可比较的东西）。画的时候把 `AN` 按分号切开，每一项再按冒号切成 `位置、目差、先验、胜率、访问次数、变化` 六段（L161）。
+
+The candidate data of the current node is `anOf(n)` (L101): the live result of the compute switch (3.9) if there is one, otherwise the cached `AN` property in the SGF; only "nodes with a continuation" show it (a leaf has nothing to compare). When drawing, `AN` is split at the semicolons and every item at the colons into the six parts `point, loss, prior, winrate, visits, line` (L161).
+
+**怎么画 / How it is drawn（L160-164）。** 每个候选点画成一颗**半透明的棋子**，颜色是行棋方的颜色（轮到黑棋就是半透明的黑子），所以你一眼就能看出"这是黑棋的候选"还是"白棋的候选"。棋子外面有一个圈，圈的颜色表示"比局部最优差多少"：差不到 0.3 目是绿色，差 0.3 到 1.5 目是橙色，差得更多是红色；圈的下方写"最优"或具体数字（例如 -0.7）。这套颜色规则同样用在训练模式的反馈里（`lossCol()`），保持一致。
+
+Each candidate is drawn as a **translucent stone** in the colour of the side to move (a translucent black stone when it is Black's turn), so you see at once whether "this is a candidate for Black" or "for White". Around the stone is a ring whose colour says "how much worse than the local best": within 0.3 points is green, 0.3 to 1.5 points is orange, worse is red. Under the ring the label says "最优" or the number (for example -0.7). The same colour rules are used in the feedback of quiz mode (`lossCol()`), to stay consistent.
+
+**"轮到谁"怎么决定 / How "whose turn" is decided。** `nextCol(n)`（L102）的顺序是：实时分析里声明的行棋方；SGF 里这个节点的 `PL` 属性；沿着父节点往上找到最近一手棋，取它的对方；都没有就当黑棋。这是"棋子颜色画反"这次事故的修复点（第 4 节）：颜色必须来自数据里明说的行棋方，而不是靠猜。
+
+The order in `nextCol(n)` (L102) is: the side to move declared by the live analysis; the `PL` property of this node in the SGF; the opponent of the most recent move found by walking up through the parents; otherwise Black. This is the fix point of the "stone colours drawn the wrong way round" incident (section 4): the colour must come from a side to move that the data states, not from a guess.
+
+### 3.5 老师的圈与悬停预览 / Teacher circles and hover preview
+
+**蓝色虚线圈 / The blue dashed circles。** 老师在视频里从当前局面走过的每一手，都会在棋盘上画成一个蓝色虚线圈，圈的右上角有一个蓝色小圆标，写着序号 1、2、3（L165-166）。这些序号和右边"变化"列表里的编号是一一对应的（`panel()` 里的 `bt.textContent`，L186-188：序号、黑白、坐标、"AI 最优"或"AI -0.7 目"，以及要点的前 22 个字）。点蓝圈或点列表项，就进入那个分支（`go()`，L192）；↑↓ 选择、→ 进入、← 回退。
+
+Every move the teacher played from the current position in the video is drawn on the board as a blue dashed circle with a small blue badge at its upper right that reads 1, 2, 3 (L165-166). These numbers match, one to one, the numbering in the "variations" list on the right (`bt.textContent` in `panel()`, L186-188: the number, black or white, the coordinate, "AI 最优" or "AI -0.7 目", and the first 22 characters of the key point). Clicking a circle or a list item enters that branch (`go()`, L192); ↑↓ choose, → enters, ← steps back.
+
+**悬停预览 / Hover preview。** 把鼠标放到某个蓝圈上，不点击，棋盘就会"预演"这个分支：只显示这个分支，隐藏其他蓝圈和所有 AI 候选点，让画面保持干净。预演的内容由 `bPlan(n0)`（L112-121）算出来：从这个子节点开始，沿着"只有一个后续"的单链一直往下走，直到遇到分叉、叶子、新的摆放，或者超过 150 手；每一手的颜色就取这个节点自己的 `B` 或 `W`，不做任何全局推断；然后用 `replay()` 算出走完整条链之后的真实局面（包括链条里发生的提子），所以被提掉的预览棋子不会画出来。`drawBV()`（L133-140）负责画：留在盘上的链条棋子画成半透明、带蓝色实线圈、从 1 开始编号。
+
+Put the mouse on a blue circle without clicking and the board "plays out" this branch: only this branch is shown, the other blue circles and all AI candidates are hidden to keep the picture clean. The content comes from `bPlan(n0)` (L112-121): starting at this child it follows the single chain of "only one continuation" until it reaches a fork, a leaf, a new setup, or more than 150 moves. The colour of each move is simply the node's own `B` or `W`, with no global inference. Then `replay()` computes the real position after the whole chain (including captures inside the chain), so preview stones that were captured are not drawn. `drawBV()` (L133-140) draws it: the chain stones that remain on the board are translucent, with a solid blue ring, numbered from 1.
+
+链条的末端如果是一个分叉，预演还会在分叉处画出**下一层**的几个点：紫色点状圈，加上一个带全名的小药丸，例如 `3-a`、`3-b`。这些只是显示，不能悬停也不能点击，要点进这个分支之后才能选。命名规则是层级之间用连字符连接：第 1 层用 1、2、3；第 2 层用 a、b、c；第 3 层用 i、ii、iii；第 4 层用 α、β、γ，所以一个深处的节点可以叫 `3-b-ii-γ`；颜色也按层固定（蓝 `#2d6cdf`、紫 `#8e44ad`、品红 `#d63384`、灰蓝 `#5d6d7e`，避开了 AI 点用的绿橙红）。进入一个分支以后，新的当前节点的子节点又从第 1 层重新编号（`lvPart()` 和 `lvLabel()`，L107-109）。
+
+If the end of the chain is a fork, the preview also draws a few points of the **next level** at the fork: purple dotted circles with a small pill carrying the full name, for example `3-a`, `3-b`. They are display only, cannot be hovered or clicked, and can only be chosen after entering this branch. The naming joins the levels with hyphens: level 1 uses 1, 2, 3; level 2 uses a, b, c; level 3 uses i, ii, iii; level 4 uses α, β, γ, so a deep node can be called `3-b-ii-γ`. The colours are fixed per level too (blue `#2d6cdf`, purple `#8e44ad`, magenta `#d63384`, slate grey `#5d6d7e`, avoiding the green, orange and red used by the AI dots). After entering a branch, the children of the new current node are numbered from level 1 again (`lvPart()` and `lvLabel()`, L107-109).
+
+**悬停的规则 / The hover rules。** 悬停的状态只取决于"鼠标此刻是否在某个一级蓝圈的交叉点上"：移开就在同一个事件里立刻清除，没有延迟，没有记忆（`hoverBranch()`，L233-239；`setHover()`，L219 同时让右边列表里对应的条目高亮）。显示和命中有优先级：先是预演后仍在盘上的链条棋子，其次是下一层的字母圈，最后才是被隐藏的 AI 点和其他蓝圈，这样"看到的"和"点到的"永远一致。预演计划按节点缓存（`bPlanC`，L122），因为树不会变，所以结果也不会变。
+
+The hover state depends only on "is the mouse right now on the intersection of a level one blue circle": moving away clears it in the same event, with no delay and no memory (`hoverBranch()`, L233-239; `setHover()`, L219 also highlights the matching item in the list on the right). Display and hit testing have a priority: first the chain stones still on the board after the preview, then the letter circles of the next level, and only last the hidden AI dots and the other blue circles, so "what you see" and "what you hit" always agree. The preview plan is cached per node (`bPlanC`, L122), because the tree never changes and neither does the result.
+
+### 3.6 AI 变化的悬停与固定 / AI line hover and pin
+
+**悬停 / Hover。** 把鼠标放在一个 AI 候选点上，棋盘会显示这个候选点的**主要变化**（PV，AI 预计的后续）：同样只显示这一条线，真实的棋子加上带序号的变化棋子。`pvPlan()`（L127-130）把变化着法按顺序"下"在一份**棋盘副本**上（复用 3.2 里同样的提子和自杀逻辑，`put()`，L78），颜色从 `nextCol(cur)` 开始轮流（也可以由第三个元素显式给出）；一颗变化棋子只有在"它是这个点上最后一手，并且走完变化后仍在盘上"时才画出来（`st(i)`），被提掉的不画，提示框里会写"变化内提子：提掉原有 N 子"。
+
+Put the mouse on an AI candidate and the board shows the candidate's **principal variation** (PV, what the AI expects to follow): again only this line, the real stones plus the numbered variation stones. `pvPlan()` (L127-130) "plays" the variation moves in order on a **copy of the board** (reusing the same capture and suicide logic as in 3.2, `put()`, L78), with colours alternating from `nextCol(cur)` (or given explicitly by a third element). A variation stone is drawn only if "it is the last move on that point and still on the board after the variation" (`st(i)`), captured ones are not drawn, and the tooltip says "captures inside the variation: N original stones".
+
+**固定 / Pin。** 点击候选点会把这条线"钉"在棋盘上（`pinAI`，L249）；再点同一个候选点取消；点棋盘别处也会释放。因为固定的线会隐藏所有 AI 点，所以必须允许"点任何地方都能释放"。评论里的 `⟨F4 M12 C6⟩` 这样的小标签（`chip`）也是同样的东西：点它会把这条线显示在棋盘上（L195）。
+
+Clicking a candidate "pins" this line on the board (`pinAI`, L249); clicking the same candidate again unpins it, and clicking elsewhere on the board also releases it. Because a pinned line hides all AI dots, "click anywhere to release" has to be allowed. The small tags such as `⟨F4 M12 C6⟩` in the comments (`chip`) are the same thing: clicking one shows the line on the board (L195).
+
+### 3.7 提示框 / The tooltip
+
+悬停时旁边会出现一个提示框，对 AI 候选点显示"位置、局部最优或比最优差几目、（只搜局部，不显示全盘胜率）、先验或'老师走的着法，已单独评估'、搜索次数、变化"（L243）；对老师的蓝圈显示"分支编号、老师走的着法、AI 的局部评估、之后还有几手、下一个分叉有几个分支、有几手在区域外没有画出、链内提子"等（`tipB()`，L221-232）。
+
+While hovering, a tooltip appears next to the pointer. For an AI candidate it shows "the point, local best or how many points worse than the best, (local search only, no whole board winrate), prior or 'the teacher's move, evaluated separately', visits, the line" (L243). For a teacher's blue circle it shows "branch number, the teacher's move, the AI's local evaluation, how many moves follow, how many branches the next fork has, how many moves are outside the region and not drawn, captures inside the chain" and so on (`tipB()`, L221-232).
+
+两个小设计值得说。第一，提示框是 60% 不透明的深色半透明面板，白字加深色文字阴影，这样下面的棋子还能认出来，同时对比度满足无障碍标准 WCAG AA 的 4.5 比 1（代码注释 L198-200 里记着测量值：在纯白底上 5.07 比 1，在白棋子上 5.41 比 1）。第二，提示框的位置不是固定在鼠标右下角，而是在鼠标周围的 6 个候选位置里，挑一个"盖住的重要东西最少"的（`placeTip()`，L212-216）：预览出来的棋子和字母药丸权重为 1，盘上其他棋子权重为 0.3，重叠面积最小的赢，并且有一点"粘性"（除非别的位置明显更好，否则保持上一次的选择），所以鼠标稍微抖动时提示框不会跳来跳去。提示框的文字只在悬停目标变化时才重新生成，鼠标移动只更新位置，这样不卡。
+
+Two small designs are worth mentioning. First, the tooltip is a dark panel at 60% opacity with white text and a dark text shadow, so the stones under it stay recognisable while the contrast meets the accessibility standard WCAG AA of 4.5 to 1 (the measured values are in a code comment, L198-200: 5.07 to 1 on pure white, 5.41 to 1 on a white stone). Second, the tooltip is not fixed to the lower right of the mouse but picks, among 6 candidate places around the pointer, the one that "covers the least important things" (`placeTip()`, L212-216): preview stones and letter pills have weight 1, other stones on the board weight 0.3, the smallest overlap wins, and there is a little "stickiness" (the previous choice is kept unless another one is clearly better), so the tooltip does not jump around when the mouse jitters slightly. The text of the tooltip is rebuilt only when the hovered target changes, mouse movement only updates the position, which keeps it smooth.
+
+### 3.8 评论卡片、视频链接与征子演示 / Comment cards, video links and ladder demo
+
+**评论卡片 / Comment cards。** `panel()`（L179-191）把当前节点的 `C` 评论按"以【开头的行"切成若干段，每段变成一张卡片：标题含"要点"的是橙色卡片，含"周边"的是紫色，含"AI"的是绿色，其他（老师讲解）是棕色（L18 的样式）。正文先做 HTML 转义，再把两种标记变成可点的东西：`⟨...⟩` 变成小标签（3.6），`@0|3:25` 变成"▶视频1 3:25"的链接，点击会用浏览器打开 `https://www.bilibili.com/video/<BV号>?t=<秒数>`（L194），直接跳到视频里老师讲这一手的时刻。除此之外，面板还有变化列表、手顺条（可以点任意一手跳回去）、"第 N 手 · M 个后续"信息条，以及键盘操作 ←→↑↓、Home、End（L271）。
+
+`panel()` (L179-191) cuts the `C` comment of the current node into sections at "lines starting with 【", and each becomes a card: a title containing "要点" gives an orange card, "周边" purple, "AI" green, and the rest (teacher commentary) brown (the styles at L18). The body is HTML escaped first and then two kinds of markers become clickable: `⟨...⟩` becomes a small tag (3.6), and `@0|3:25` becomes a link "▶视频1 3:25" that opens `https://www.bilibili.com/video/<BV id>?t=<seconds>` in the browser (L194), jumping straight to the moment in the video where the teacher talks about this move. The panel also has the variation list, the move path bar (click any move to jump back), the "move N, M continuations" info line, and keyboard control ←→↑↓, Home, End (L271).
+
+有一处历史遗留：节点有分叉却没有 AI 数据时，面板会显示一张绿色卡片"本分组的 AI 分析正在用修正后的方法重新生成（旧结果因分数视角错误已撤下）"（L184）。这句话是第一次视角事故之后写的，现在对"从未分析过的分组"也会出现，措辞已经不准确，可以改成"本分组还没有 AI 评估"。
+
+One historical leftover: when a node has a fork but no AI data, the panel shows a green card "本分组的 AI 分析正在用修正后的方法重新生成（旧结果因分数视角错误已撤下）" (this group's AI analysis is being regenerated with the corrected method, the old result was withdrawn because of a score perspective error) (L184). The sentence was written after the first perspective incident and now also appears for groups that were never analysed, so the wording is no longer accurate and could become "this group has no AI evaluation yet".
+
+**征子演示 / Ladder demo。** 如果评论里提到"征子"，工具栏里会出现"演示征子"按钮（L176）。`ladderDemo()`（L91-99）在当前局面上找气不超过 2 口的棋块（从最近的几手棋开始），用 `runLadder()`（L79-90）模拟追的过程：追的一方每一手都叫吃，被追的一方沿对角线逃，最多走 60 手；结果有四种：撞到边上或遇到追方的子被提掉，征子成立；遇到被追方的接应子逃了出去，征子不成立；追的一方无法继续叫吃，征子不成立；超过 60 手没有结论。结果会把走法画成幽灵棋子，并在说明条里写出结论，例如"遇到白方接应子 K10，征子不成立，追方黑不利"。**限制 / Limit**：它靠"最近的几手棋"猜测要演示哪一块，可能选错棋块，所以只是一个演示，不是证明。
+
+If the comment mentions "征子", a "演示征子" button appears in the toolbar (L176). `ladderDemo()` (L91-99) looks in the current position for groups with at most 2 liberties (starting with the most recent moves) and simulates the chase with `runLadder()` (L79-90): the chasing side plays atari each move and the chased side runs along the diagonal, for at most 60 moves. There are four results: hitting the edge or a chaser's stone and being captured means the ladder works; meeting a ladder breaker (the chased side's stone) and escaping means the ladder fails; the chaser cannot continue the atari, the ladder fails; more than 60 moves without a conclusion. The result draws the moves as ghost stones and states the conclusion in the caption bar, for example "meets a White ladder breaker at K10, the ladder fails, bad for the chaser Black". **Limit**: it guesses which group to demonstrate from "the most recent moves" and can pick the wrong group, so it is a demonstration, not a proof.
+
+### 3.9 算力开关 / The compute switch
+
+**它是什么 / What it is。** 左侧边栏最下面有一个折叠的"算力 · 缓存"（`<details id="rc">`，L32）。默认模式"缓存"：页面只用 SGF 里已经算好的 AI 数据，**完全不联网**。如果你自己运行了 KataGo，可以把它切到"本机"或"远程 GPU"，页面就会向你填的桥接地址请求实时分析。实现是 `window.RC` 这个对象（`index.html` L284-360），设置（模式、是否自动分析、每种模式的地址和 token）保存在浏览器的 `localStorage` 里，键名是 `josekiapp.rc.v1`，每次读写都包在 `try/catch` 中，因为有些浏览器（隐私窗口）会禁止它。
+
+At the very bottom of the left sidebar there is a folded "算力 · 缓存" (compute, cache) (`<details id="rc">`, L32). The default mode "cache" means the page only uses the AI data already computed in the SGF and **never touches the network**. If you run your own KataGo you can switch to "local" or "remote GPU" and the page asks the bridge address you typed for a live analysis. It is the object `window.RC` (`index.html` L284-360). The settings (mode, auto analysis, the address and token of each mode) are saved in the browser's `localStorage` under the key `josekiapp.rc.v1`, every access wrapped in `try/catch` because some browsers (private windows) forbid it.
+
+**它做的几件事 / What it does。**
+
+- **连接测试**：`test()`（L299-305）向桥接服务的 `/health` 发请求，只有当桥接服务在响应里声明 `winratesAs === 'BLACK'` 时才接受，否则拒绝使用（"为避免视角错误已拒绝使用"）。
+
+  **Connection test**: `test()` (L299-305) calls the bridge's `/health` and only accepts it when the bridge declares `winratesAs === 'BLACK'` in the response, otherwise it refuses to use it ("rejected to avoid perspective errors").
+
+- **把局面写成请求**：`query()`（L315-321）从根到当前节点，取最后一次摆放之后的棋盘作为 `initialStones`，后面的着法逐手写进 `moves`（脱先写成 `pass`），区域用 `region()`（L308-313，和流水线 `analyze2.region()` 是同一套规则的 JS 版），并且 `allowMoves` 限制在区域内。注意：这里没有着法时会写 `initialPlayer`（L321），说明谁先走。
+
+  **Write the position as a request**: `query()` (L315-321) takes the board after the last setup from the root to the current node as `initialStones`, writes the following moves one by one into `moves` (a tenuki becomes `pass`), uses `region()` (L308-313, the JS version of the same rules as `analyze2.region()`), and restricts `allowMoves` to the region. Note that when there are no moves it writes `initialPlayer` (L321) to say who moves first.
+
+- **视角换算**：`conv()`（L323-327）把黑方视角换成行棋方视角，和流水线的 `convert()` 是同一个公式；如果响应没有声明黑方视角，就拒绝。
+
+  **Perspective conversion**: `conv()` (L323-327) turns Black's perspective into the side to move's perspective with the same formula as the pipeline's `convert()`, and refuses if the response does not declare Black's perspective.
+
+- **强制评估老师的着法**：`forceTeacher()`（L329-332）和流水线第二阶段一样，主搜索访问次数不够的老师着法单独再问一次，最多同时 3 个请求，以免压垮桥接服务。
+
+  **Forced evaluation of the teacher's moves**: `forceTeacher()` (L329-332) does what the pipeline's second phase does, asking separately for the teacher moves with too few visits in the main search, with at most 3 concurrent requests so the bridge is not overwhelmed.
+
+- **生成候选串**：`mkAN()`（L334-335）把结果压成和 SGF 里一模一样的 `AN` 字符串，存进 `node.live`；`anOf()` 优先用 `live`，其余的画图代码一行都不用改。
+
+  **Build the candidate string**: `mkAN()` (L334-335) squeezes the result into exactly the same `AN` string format as in the SGF and stores it in `node.live`; `anOf()` prefers `live`, so none of the drawing code has to change.
+
+- **试下一手**：开着算力时，点击讲解区域内的空点会建一个临时节点（不会加进棋谱的树里），并分析"对方怎么应"（`RC.click()`，L350-354）；区域外的点和自杀的点会被拒绝并提示。
+
+  **Try a move**: with compute on, clicking an empty point inside the teaching region creates a temporary node (never added to the tree of the game record) and analyses "how the opponent answers" (`RC.click()`, L350-354); a point outside the region or a suicide point is refused with a message.
+
+连接失败时，页面会自动退回缓存数据并说明原因，不会因为引擎不可用而卡住。
+
+When the connection fails, the page falls back to the cached data automatically and says why, so it never hangs because the engine is unavailable.
+
+**限制 / Limit。** 视角换算、区域计算、候选串这三套规则在 Python（流水线）和 JavaScript（这里）各有一份，改一边时必须同步另一边。`tests/engine_conv.test.js` 会把 `index.html` 里真实的 `conv` 和 `mkAN` 抠出来跑，防止它们被悄悄改坏；但区域计算两边是否一致，没有测试直接比较 **[未核实]**。
+
+The perspective conversion, the region calculation and the candidate string exist in two copies, Python (pipeline) and JavaScript (here), and changing one side means keeping the other in sync. `tests/engine_conv.test.js` extracts the real `conv` and `mkAN` from `index.html` and runs them so they cannot be broken silently, but whether the region calculation is the same on both sides is not compared by any test **[not verified]**.
+
+### 3.10 KataGo 继续推演面板 / The engine panel
+
+**做什么 / What。** 当前节点右边评论卡片下面有一张"KataGo 继续推演"卡片（还有工具栏的"推演"按钮）：你可以让 KataGo 在当前局面上不停地往下算，看着候选点和目差一边跳一边收敛，可以暂停、继续、停止，设置次数上限（200、1000、5000 次或直到停止），可以只搜讲解区域，可以显示最佳线，还可以把这条线"采用"成一段 SGF 复制走。它和 3.9 共用同一个桥接服务，只是用流式接口，让答案边算边到。
+
+Below the comment cards of the current node there is a "KataGo 继续推演" (KataGo continue) card (and a "推演" button in the toolbar): you can let KataGo keep calculating from the current position and watch the candidates and point differences jump and settle, pause, resume and stop it, set a visit cap (200, 1000, 5000 or until stopped), search only the teaching region, show the best line, and "adopt" this line as a piece of SGF to copy away. It shares the bridge with 3.9 and only uses the streaming interface, so answers arrive while the search is running.
+
+它由三个文件组成，分工很清楚：
+
+It consists of three files with a clean division of work:
+
+| 文件 / File | 角色 / Role | 要点 / Notes |
+|---|---|---|
+| `engine_core.js`（225 行） | 纯逻辑，不碰页面也不联网，所以能在 Node 里测试 / Pure logic, touches neither the page nor the network, so it can be tested in Node | `createLineParser()` 处理被切断的 NDJSON；`validateEndpoint()` 要求地址里没有用户名、参数，token 只放在专门的栏里；`mapError()` 把错误翻成一句中文和一行"怎么办"；`effectiveCap()` 次数上限；`reduce()` 是一个状态机，阶段有 `idle`、`connecting`、`running`、`stopping`、`paused`、`done`、`error`，并用"任务编号"丢掉过期的答案；`sgfSnippet()` 生成"采用这条线"的 SGF / `createLineParser()` handles NDJSON cut in the middle; `validateEndpoint()` demands no user name or parameters in the address, the token only in its own field; `mapError()` turns an error into one Chinese sentence and one line of "what to do"; `effectiveCap()` the visit cap; `reduce()` is a state machine with the phases `idle`, `connecting`, `running`, `stopping`, `paused`, `done`, `error`, using a "job number" to drop stale answers; `sgfSnippet()` makes the SGF of "adopt this line" |
+| `engine_net.js`（78 行） | 整个页面**唯一**允许联网的文件 / The **only** file of the page allowed to use the network | `EngineNet.request()` 是唯一调用 `fetch` 的地方（L39）：不带 cookie（`credentials: 'omit'`）、不带来源页面（`referrerPolicy: 'no-referrer'`）、拒绝重定向（`redirect: 'error'`），token 只放在 `Authorization` 头里；每次请求先写一条"网络活动"记录再发送，所以那个列表按构造就是完整的 / `EngineNet.request()` is the only call to `fetch` (L39): no cookies (`credentials: 'omit'`), no referrer (`referrerPolicy: 'no-referrer'`), redirects refused (`redirect: 'error'`), the token only in the `Authorization` header; every request writes an entry to the "network activity" list before it is sent, so that list is complete by construction |
+| `engine_panel.js`（329 行） | 卡片的界面和接线 / The card's interface and wiring | `startJob()`（L79-97）向 `/stream` 发请求并带上 `reportDuringSearchEvery: 0.5`（每 0.5 秒来一次更新）；`onMsg()`（L98-113）把每次更新用 `RC.conv()` 转换，存进 `node.live`，再调用页面自己的 `draw()` 重画；`finishJob()` 结束后补做老师着法的强制评估；`autoGhost()` 自动显示最佳线；`loadModels()` 和 `switchModel()`（L137-162）读取并切换桥接服务允许的网络；翻页（`go()`）会通过 `onGo()` 立刻取消正在运行的搜索 / `startJob()` (L79-97) sends a request to `/stream` with `reportDuringSearchEvery: 0.5` (an update every 0.5 s); `onMsg()` (L98-113) converts every update with `RC.conv()`, stores it in `node.live` and calls the page's own `draw()`; `finishJob()` adds the forced evaluation of the teacher moves at the end; `autoGhost()` shows the best line; `loadModels()` and `switchModel()` (L137-162) read and switch the networks the bridge allows; moving to another node (`go()`) cancels a running search at once through `onGo()` |
+
+关键的设计原则是"面板不重复实现任何规则"：位置到请求、视角换算、候选串、强制评估全部直接调用页面的 `RC`；面板只往 `node.live` 里放结果，画点、圈、悬停、提示框全部走页面原来的代码。`tests/engine_conv.test.js` 的第一条测试会检查面板文件里没有任何视角换算代码。
+
+The key design principle is "the panel re-implements no rule": the position to request, the perspective conversion, the candidate string and the forced evaluation all call the page's `RC` directly, the panel only puts results into `node.live`, and drawing dots, circles, hover and tooltips all go through the page's original code. The first test of `tests/engine_conv.test.js` checks that the panel files contain no perspective conversion code.
+
+**桥接服务 / The bridge。** `remote/katago_bridge.py`（1072 行，版本 2，只用 Python 标准库）是页面和你自己的 KataGo 之间的"翻译官"：它启动 KataGo 的分析引擎，把页面发来的请求检查、清理后转给引擎，再把答案传回去。接口有：`GET /health`（引擎状态、版本、当前网络、限制）、`GET /models`（运维允许的网络，只给 id 和名字，不给路径）、`POST /analyze`（一问一答）、`POST /stream`（一问多答，NDJSON 流，最后一行带 `"done": true`）、`POST /terminate`（立刻停止当前搜索）、`POST /switch`（按 id 切换网络，过程用流返回）。安全设计：必须带令牌（`Authorization: Bearer ...`，用常数时间比较；没有给的话在回环地址上随机生成并只打印一次）；默认只监听 `127.0.0.1`，端口 8787，换地址要显式加 `--host`，并且没有 TLS 会大声警告；跨域只允许白名单来源；`sanitize()`（L89-165）只接受白名单字段并限制访问次数、着法数、请求体大小；同一时间只允许一个流式搜索（新的会顶掉旧的）；网络和配置只能按 id 从运维给的白名单里选，请求里永远不能写路径；强制把 `reportAnalysisWinratesAs=BLACK` 通过命令行传给 KataGo，并在每个响应里写上 `bridge.winratesAs`，让页面核对视角。`--fake` 选项不启动 KataGo，返回明确标注为"模拟数据"的假结果，只用来试界面。
+
+`remote/katago_bridge.py` (1072 lines, version 2, standard library only) is the "interpreter" between the page and your own KataGo: it starts KataGo's analysis engine, checks and cleans the requests the page sends, hands them to the engine and passes the answers back. Its interface: `GET /health` (engine state, version, current network, limits), `GET /models` (the networks the operator allowed, ids and names only, never paths), `POST /analyze` (one question, one answer), `POST /stream` (one question, many answers, an NDJSON stream whose last line carries `"done": true`), `POST /terminate` (stop the current search now), `POST /switch` (switch the network by id, progress returned as a stream). Security design: a token is required (`Authorization: Bearer ...`, compared in constant time, and if none is given one is generated randomly on a loopback address and printed once); it listens on `127.0.0.1` only by default, port 8787, any other address needs an explicit `--host` and a missing TLS triggers a loud warning; cross origin access is only allowed for allowlisted origins; `sanitize()` (L89-165) accepts only allowlisted fields and caps visits, number of moves and body size; only one streaming search at a time (a new one preempts the old one); networks and configs can only be chosen by id from the operator's allowlist and a request can never name a path; it forces `reportAnalysisWinratesAs=BLACK` on KataGo's command line and writes `bridge.winratesAs` into every response so the page can check the perspective. The `--fake` option does not start KataGo and returns fake results clearly labelled "simulated", only for trying the interface.
+
+**限制 / Limit。** **[未核实]** 整套引擎面板和桥接服务从来没有连过真实的 KataGo：面板的逻辑有 Node 测试，桥接服务有用假引擎和回环套接字的自检（`remote/selftest.py`），页面在浏览器里对着一个模拟的桥（页内的 `fetch` 桩）试过，但"真实 KataGo 的流式输出、暂停、切换网络"这条完整路径没有人实际走过（`remote/README.md` 第 8 节也这样写）。云端部署没有试过，条款风险的说明在 `remote/README.md` 第 5 节：不要用 ngrok 之类的隧道把 Colab 免费版或 Kaggle 暴露成实时服务。
+
+**[Not verified]** The whole engine panel and the bridge have never been connected to a real KataGo. The panel's logic has Node tests, the bridge has a self test with a fake engine and a loopback socket (`remote/selftest.py`), and the page was tried in a browser against a simulated bridge (an in-page `fetch` stub), but the whole path "real KataGo streaming, pause, switching networks" has not actually been walked by anyone (section 8 of `remote/README.md` says so too). Cloud deployment was never tried, and the terms of service risks are described in section 5 of `remote/README.md`: do not expose the free tier of Colab or Kaggle as a real time service through a tunnel such as ngrok.
+
+### 3.11 训练模式 / Quiz mode
+
+**它是什么 / What it is。** 工具栏的"训练"按钮进入一个"实战题库"式的练习：系统从定式里出一道题，给你一个局面，你在棋盘上点出你认为的下一手，它判对错，讲解老师和 AI 怎么看，并按"记忆曲线"安排你什么时候再做这道题。逻辑全部在 `quiz_core.js`（412 行，纯逻辑，可在 Node 里测试），界面在 `quiz.js`（374 行）。按你的产品目标，玩法参考了涨棋网的实战题库 **[这一条来自你的需求，不在代码里]**。
+
+The "训练" (training) button of the toolbar enters a practice mode in the style of a "practical problem bank": the system poses a question from a joseki, gives you a position, you click on the board the next move you think is right, it judges right or wrong, explains how the teacher and the AI see it, and schedules when you should do this question again by a "memory curve". All the logic is in `quiz_core.js` (412 lines, pure logic, testable in Node), the interface is in `quiz.js` (374 lines). Following your product goal, the play style takes the practical problem bank of 涨棋网 as a model **[this comes from your requirement, not from the code]**.
+
+**怎么出题 / How questions are made。** `extractQuestions()`（`quiz_core.js` L157-185）：棋谱里每个有两个以上老师后续、或者带有 `AN` 数据的节点，就是一道题——局面是到这个节点为止的棋子，任务是行棋方的下一手。如果这个节点既没有老师讲解文字也没有 AN，就跳过；如果合理的着法不足两个，也跳过（太简单或没法判断）。行棋方由 `questionSide()`（L111-115）决定：有 `PL` 就用 `PL`，没有就看老师的着法是不是同一种颜色，再不行才按"上一手的对方"。题目编号是"局面的着法路径"的 53 位哈希（`hash53()`，L131-140），所以即使数据重新生成，只要局面不变，你的学习进度就不会丢。
+
+`extractQuestions()` (`quiz_core.js` L157-185): every node of the game record that has two or more teacher continuations, or carries `AN` data, is a question: the position is the stones up to this node, the task is the next move of the side to move. A node with neither teacher text nor AN is skipped, and so is one with fewer than two sensible moves (too easy, or impossible to judge). The side to move is decided by `questionSide()` (L111-115): `PL` if there is one, otherwise whether the teacher's moves all have the same colour, and only then "the opponent of the last move". The question id is a 53 bit hash of "the move path of the position" (`hash53()`, L131-140), so even if the data is regenerated, your learning progress is not lost as long as the position stays the same.
+
+**什么算对 / What counts as correct。** `acceptedOf()`（L199-216）：AI 评估里排名前 N 的候选（默认 N 等于 3；比最优差超过 3 目的永远不算，并列的算进去），加上老师走过的着法（只要它比最优差不超过 1 目，或者这个节点根本没有 AI 数据）。如果这个节点有 AI 数据，而老师的某一手落在区域外（没有被评估），就不算对，因为那是脱先之类的手。这就是为什么 AI 数据完整的分组出的题更可靠。**注意：** 这套判断完全信任 SGF 里的 `PL`，所以第 6.3 节说的"起始局面节点按错边评估"的缺陷，也会让对应的题变成"问错了一方"。
+
+`acceptedOf()` (L199-216): the top N candidates of the AI evaluation (N is 3 by default; those worse than the best by more than 3 points never count, and ties are included), plus the moves the teacher played (provided they are at most 1 point worse than the best, or the node has no AI data at all). If the node has AI data and one of the teacher's moves lies outside the region (so was not evaluated), it does not count as correct, because it is a tenuki or similar. This is why groups with complete AI data produce more reliable questions. **Note:** this judgement trusts the `PL` in the SGF completely, so the defect described in 6.3, "starting position nodes evaluated for the wrong side", also turns the matching questions into "asked about the wrong side".
+
+**八种对称 / The eight symmetries。** 棋盘有 8 种等价的摆法（4 个旋转、4 个镜像，`SYM`，L224-229），同一个定式摆在哪个角、朝哪个方向，在围棋里本质上是同一个定式。每道题随机选一种变换（`randomSym()`），把局面变过去给你看，这样你记住的是"形状"而不是"坐标"；答完之后，讲解按原方向还原显示，因为讲解文字里写的坐标是按原图的。
+
+A board has 8 equivalent ways to be laid out (4 rotations, 4 mirror images, `SYM`, L224-229), and the same joseki placed in another corner or turned another way is essentially the same joseki in Go. Every question picks one transformation at random (`randomSym()`) and shows you the transformed position, so what you memorise is the "shape" and not the "coordinates". After the answer the explanation is restored to the original orientation, because the coordinates written in the explanation text follow the original diagram.
+
+**记忆曲线（莱特纳盒子） / The memory curve (Leitner boxes)。** 莱特纳盒子像一排复习用的抽屉：做对了，这道题往后挪一格，下次再见的间隔更长；做错了，退回第一格，当天还会再来。档位间隔是 0、1、2、4、7、15、30 天（`INTERVALS`，L15）。`grade()`（L282-293）记录一次作答：对则升一档，错则回到 0 档并且当天到期；连续两次到达最高档就算"已掌握"，不再出现。`eligible()`（L277-280）规定什么时候能出现：没掌握、到期了，而且 10 分钟内答过的不重复（答错的重做除外）。`buildSession()`（L328-336）组成每天的题单：先是到期的复习题（档位低的、过期久的优先），然后是新题，新题数量受"每日上限"限制（默认 20）；"混合"模式会把各个定式的题交错开，避免连续做同一个定式。答对之后可能再出最多 2 道"附加题"（`followUp()`，L342-356）：沿着老师的最佳变化走下一手，继续考同一方的下一个选择，附加题不计入记忆曲线。还可以按深度过滤：开局（前 4 手内）、中段（5 到 10 手）、深入（11 手以上）。
+
+Leitner boxes are like a row of drawers used for revision: a correct answer moves the question one drawer further, so the next meeting comes after a longer interval, a wrong answer sends it back to the first drawer and it comes again the same day. The intervals are 0, 1, 2, 4, 7, 15 and 30 days (`INTERVALS`, L15). `grade()` (L282-293) records one answer: correct moves up one box, wrong goes back to box 0 and is due the same day, and arriving at the top box twice in a row counts as "mastered" and it never appears again. `eligible()` (L277-280) says when a question may appear: not mastered, due, and not answered in the last 10 minutes (a retry of a wrong answer excepted). `buildSession()` (L328-336) builds the daily list: first the due reviews (low boxes and the longest overdue first), then new questions, whose number is limited by the "daily limit" (20 by default). The "mixed" mode interleaves the questions of the different joseki so you do not do the same one in a row. After a correct answer up to 2 "follow-up questions" may come (`followUp()`, L342-356): it follows the teacher's best line, asking the next choice of the same side, and follow-ups do not count for the memory curve. You can also filter by depth: opening (within the first 4 moves), middle (5 to 10 moves), deep (11 moves or more).
+
+**进度保存与界面 / Saving progress and the interface。** 进度只存在你自己浏览器的 `localStorage`（键 `josekiapp.quiz.v1`，`quiz.js` L10），并且可以"导出进度"成一个 JSON 文件、"导入进度"合并回来（`importProgress()`，L384-396，合并时按每题最后一次作答取新的；导入前用 `sanitize()` 清洗，防止坏文件），所以换一台电脑或清掉浏览器数据时不会丢。界面方面，训练视图"借用"查看器的画布：`showBoard()`（`quiz.js` L86-96）把查看器的全局变量（`cur`、`tree`、`col`、`view`）临时换成题目局面的副本，`drawBoard()` 照常画；`enter()` 和 `exit()`（L111-130）负责保存和恢复，退出训练时一切回到原样。
+
+Progress is only kept in your own browser's `localStorage` (key `josekiapp.quiz.v1`, `quiz.js` L10) and can be "exported" as a JSON file and "imported" back to merge (`importProgress()`, L384-396, which keeps the newer record per question by the last answer, and cleans the input with `sanitize()` first so a bad file cannot do harm), so nothing is lost when you change computer or clear browser data. For the interface, the quiz view "borrows" the viewer's canvas: `showBoard()` (`quiz.js` L86-96) temporarily replaces the viewer's global variables (`cur`, `tree`, `col`, `view`) with a copy of the question position, and `drawBoard()` draws as usual. `enter()` and `exit()` (L111-130) save and restore, so leaving the quiz puts everything back.
+
+**限制 / Limit。** 题目的质量取决于数据：AI 评估越完整，"对"的集合越可靠；没有 AI 评估的分组只能靠老师的着法判断，一道题可能只有一个"对"的答案。`tests/scan_library.js` 可以扫一遍真实的 `library.js`，列出每个定式的题数、没有或只有一个可接受着法的题数，用来检查阈值是否合理；我没有在 develop 当前的数据（只有 4 个有内容的分组）上得出有意义的结论 **[未核实：真实题库的质量]**。
+
+The quality of the questions depends on the data: the more complete the AI evaluation, the more reliable the set of "correct" answers, and a group without AI evaluation can only be judged by the teacher's moves, so a question may have a single "correct" answer. `tests/scan_library.js` scans a real `library.js` and lists for each joseki the number of questions and how many have no or only one acceptable move, to check whether the thresholds are sensible. I did not draw a meaningful conclusion on the current data of develop (only 4 groups with content) **[not verified: the quality of a real question bank]**.
+
+### 3.12 页脚、署名与复制 SGF / Footer, credit and copy SGF
+
+许可证把"署名"当作再使用的条件，所以署名在查看器里有三处。第一，页面最下面的页脚（L37-38）一直可见，写着项目名、代码许可（PolyForm Noncommercial 1.0.0）、数据与文档许可（CC BY-NC-SA 4.0）、"讲解文字版权归陈林涛"，以及指向 `NOTICE.md` 的链接；源码里的注释要求拷贝或改写查看器时保留它。第二，"复制 SGF"按钮（L270）复制的是 `withCredit(col.sgf)`（L257-268）：它逐个属性读根节点，只补上文件里还没有的 `AP`、`CP`、`SO`，所以复制出去的棋谱也带着署名；存放在库里的 SGF 本身不会被改。第三，流水线生成的每个 SGF 根节点本来就写了这三个属性（2.7）。
+
+The licenses make "credit" a condition of reuse, so credit appears in three places in the viewer. First, the footer at the bottom of the page (L37-38) is always visible and carries the project name, the code license (PolyForm Noncommercial 1.0.0), the data and docs license (CC BY-NC-SA 4.0), "the copyright of the commentary text belongs to 陈林涛", and a link to `NOTICE.md`; a comment in the source asks to keep it when the viewer is copied or adapted. Second, the "复制SGF" (copy SGF) button (L270) copies `withCredit(col.sgf)` (L257-268): it reads the root node property by property and only adds the `AP`, `CP` and `SO` the file does not have yet, so a game record copied out carries the credit too, while the SGF stored in the library is never changed. Third, every SGF the pipeline generates already has these three properties on its root (2.7).
+
+### 3.13 手机版与离线应用 / Mobile edition and offline app
+
+**手机布局 / Phone layout。** `mobile.js`（270 行）只在手机和平板尺寸的窗口里启用，宽屏桌面保持原来的三栏。竖屏且宽度不超过 1100 px 时（模式 A）：棋盘在最上面并保持粘住，评论和变化列表在下面滚动，底部固定一条有六个按钮的控制栏（上一手、下一手、变化、视角、AI 局部点、更多），其他按钮收在"更多"里；目录和算力卡片收进一个抽屉。横屏且宽度不超过 1199 px 时（模式 B）：棋盘在左，评论在右。细节上：用 `100dvh` 避开手机浏览器的地址栏、`env(safe-area-inset-*)` 避开刘海、输入框字号至少 16 px 防止 iOS 聚焦时自动放大、按钮至少 44 px 方便手指点、页面没有横向滚动。
+
+`mobile.js` (270 lines) is active only in windows of phone and tablet size, and wide desktops keep the original three columns. In portrait up to 1100 px wide (mode A): the board is on top and stays stuck, the comments and the variation list scroll below it, a control bar with six buttons is fixed at the bottom (previous, next, variations, view, AI dots, more), the other buttons go into "more", and the collection list and the compute card go into a drawer. In landscape up to 1199 px wide (mode B): the board on the left, the comments on the right. In detail: `100dvh` avoids the address bar of phone browsers, `env(safe-area-inset-*)` avoids the notch, input fields use at least 16 px so iOS does not zoom on focus, buttons are at least 44 px for fingers, and the page has no horizontal scroll.
+
+**触摸操作 / Touch。** 手机没有"悬停"，所以把悬停功能换成"长按"：在棋盘上按住约 0.32 秒（`HOLD = 320`，`mobile.js` L200），效果和鼠标悬停完全一样，手指滑动可以切换预览，松手立刻清除。实现上，长按只是去调用棋盘原来的鼠标处理函数（`cv.onmousemove`），所以悬停的所有规则只有一份代码。长按之后浏览器补发的那次点击会被吞掉，避免误进分支；触摸之后浏览器合成的鼠标事件会被忽略，避免出现"幽灵悬停"；双击缩放和手势缩放在棋盘上被禁止。训练模式在手机上改成两次点击答题：第一次点击只在那个点放一颗半透明的预览棋子，第二次点同一位置才确认，防止手滑交卷。
+
+A phone has no "hover", so hover features become "long press": hold the board for about 0.32 seconds (`HOLD = 320`, `mobile.js` L200) and you get exactly what mouse hover gives, sliding the finger switches the preview and releasing clears it at once. In the implementation a long press only calls the board's original mouse handler (`cv.onmousemove`), so all the hover rules exist in one copy of code. The click the browser sends after a long press is swallowed to avoid entering a branch by accident, the mouse events a browser synthesises after a touch are ignored to avoid a "ghost hover", and double tap zoom and gesture zoom are blocked on the board. In quiz mode on a phone the answer takes two taps: the first tap only puts a translucent preview stone on that point, the second tap on the same place confirms, so a slip of the finger does not hand in the answer.
+
+**离线应用 / Offline app。** `manifest.webmanifest` 加上四个图标（`tools/make_icons.py` 用标准库画的），让页面可以"添加到主屏幕"像应用一样打开；`pwa.js`（28 行）只做一件事：注册 `sw.js`；`sw.js`（40 行）是服务工作线程，把页面外壳和 `data/library.js` 存进缓存（缓存名 `joseki-shell-v` 加界面版本号 `4.7`），断网也能打开。它只处理同源的 GET 请求，跨域的（B 站链接、你自己的桥接服务）原样放行，从不缓存。外壳文件是"缓存优先"；`library.js` 则是"先返回缓存，同时在后台刷新"，因为流水线会不升版本号地重新生成它，下次打开就是新数据。更新是安全的：新版本装好后处于等待状态，页面底部出现"有新版本，点这里更新"，点了才切换并刷新，正在使用的会话不会被偷偷换掉。
+
+`manifest.webmanifest` plus four icons (drawn by `tools/make_icons.py` with the standard library) let the page be "added to the home screen" and open like an app. `pwa.js` (28 lines) does one thing: it registers `sw.js`. `sw.js` (40 lines) is the service worker, which stores the page shell and `data/library.js` in a cache (the cache name is `joseki-shell-v` plus the interface version `4.7`) so it opens even without a network. It handles same origin GET requests only, cross origin ones (Bilibili links, your own bridge) pass through untouched and are never cached. Shell files are "cache first". `library.js` is "answer from the cache and refresh in the background", because the pipeline regenerates it without a version bump, so the next open has new data. Updating is safe: a new version waits after installing, a notice "有新版本，点这里更新" (a new version, tap here to update) appears at the bottom of the page, and the switch and reload happen only after the tap, so a running session is never replaced behind your back.
+
+**可部署的文件夹 / A deployable folder。** `tools/make_site.py` 把查看器需要的文件复制到一个 `site/` 文件夹，并生成 `_headers`（内容安全策略：唯一的内联脚本靠它的 sha256 哈希放行，页面脚本不需要 `unsafe-inline`；还有不发 Referer、禁摄像头麦克风定位等）、`robots.txt`（不让搜索引擎收录）和一个说明。`--strip-commentary` 选项会把老师讲解部分的正文去掉，只留标题和时间链接（点开仍然跳到视频）。它只复制和改写文件，从不上传。
+
+`tools/make_site.py` copies the files the viewer needs into a `site/` folder and generates `_headers` (a content security policy where the one inline script is allowed by its sha256 hash, so page scripts need no `unsafe-inline`; plus no referrer, no camera, microphone or location, and so on), `robots.txt` (keeps search engines out) and a short note. The `--strip-commentary` option removes the body of the teacher commentary sections and keeps only the title and the time link (which still jumps to the video). It only copies and rewrites files and never uploads anything.
+
+**限制 / Limit。** **[未核实]** 手机版只在电脑浏览器里用改变视口大小的办法检查过（`docs/MOBILE-AND-HOSTING.md` 的设备矩阵，宽度从 280 到 720 像素，都通过），**没有在任何真实的手机上试过**：长按的手感、iOS Safari 的细节、添加到主屏幕、离线打开，都需要你在真机上确认。托管也没有做：没有开 GitHub Pages，没有部署，没有任何公开网址。
+
+**[Not verified]** The mobile edition was only checked in a desktop browser by resizing the viewport (the device matrix in `docs/MOBILE-AND-HOSTING.md`, widths from 280 to 720 pixels, all pass), and **has not been tried on any real phone**: the feel of the long press, the details of iOS Safari, adding to the home screen and opening offline all need you to confirm on a real device. Hosting is not done either: no GitHub Pages, no deployment, no public URL.
+
+### 3.14 隐私设计 / Privacy design
+
+隐私是按"默认什么都不发"来设计的，并且有自动测试守着。
+
+Privacy is designed as "send nothing by default", and an automated test guards it.
+
+- 默认的"缓存"模式不联网；没有统计、没有第三方请求、没有 cookie。
+
+  The default "cache" mode does not use the network; there is no analytics, no third party request and no cookie.
+
+- 整个页面只有 `engine_net.js` 可以联网（`sw.js` 里有一次同源的 `fetch`，受限更严）；`tests/privacy.test.js` 会读取查看器的每一个 JS 和 HTML 文件，只要有别的文件出现 `fetch`、`XMLHttpRequest`、`WebSocket`、`sendBeacon`、`indexedDB`、`document.cookie`、`eval`、动态创建 `script` 或 `img`、用代码改 `src` 或 `location`、`<form>`，或者页面自动加载绝对网址，测试就失败。它是防"不小心"和防"慢慢走样"的栏杆，不是防有人故意藏代码的证明；好在源码很小，可以自己读。
+
+  Only `engine_net.js` of the whole page can use the network (`sw.js` has one same origin `fetch`, under tighter limits). `tests/privacy.test.js` reads every JS and HTML file of the viewer and fails as soon as another file contains `fetch`, `XMLHttpRequest`, `WebSocket`, `sendBeacon`, `indexedDB`, `document.cookie`, `eval`, a dynamically created `script` or `img`, code that changes `src` or `location`, a `<form>`, or a page that loads an absolute URL by itself. It is a railing against "by accident" and "slowly drifting", not a proof against someone hiding code on purpose; the source is small enough to read yourself.
+
+- 选了"本机/远程"之后，发出去的只有当前局面的棋盘坐标（哪些点有子、走了哪几手、讲解区域），不含文件名和页面网址；token 只放在 `Authorization` 头里，不进网址，不发 cookie，不发来源页面，也不跟随重定向；"网络活动"列表在内存里，刷新就清空。如果你用远程 GPU，服务商的机器能看到这些坐标，经 SSH 转发或 https 时路上的人看不到。详细说明在 `docs/ENGINE-SETUP.md` 第 1 节。
+
+  After choosing "local/remote", what is sent is only the board coordinates of the current position (which points have stones, which moves were played, the teaching region), no file name and no page address. The token goes only in the `Authorization` header, never in the address, no cookies, no referrer, and redirects are not followed. The "network activity" list lives in memory and is cleared on reload. With a remote GPU the provider's machine can see these coordinates, while people on the way cannot over an SSH forward or https. Details are in section 1 of `docs/ENGINE-SETUP.md`.
+
+- 浏览器里只有三个键：`josekiapp.rc.v1`（算力设置，含你填的地址和 token）、`josekiapp.ep.v1`（推演面板设置）、`josekiapp.quiz.v1`（训练进度）；每次读写都在 `try/catch` 里（有测试检查）。**注意**：token 是明文存在 `localStorage` 里的，能打开你的浏览器配置文件的人就能看到它，所以只在你自己的电脑上使用，不要在公用电脑上填 token。
+
+  The browser holds only three keys: `josekiapp.rc.v1` (compute settings, including the address and token you typed), `josekiapp.ep.v1` (engine panel settings) and `josekiapp.quiz.v1` (quiz progress), and every access is in `try/catch` (a test checks this). **Note**: the token is stored in plain text in `localStorage`, so anyone who can open your browser profile can see it. Use it only on your own computer and never type a token on a shared computer.
+
+- B 站的视频链接只有你点击时才会打开。
+
+  The Bilibili video links are only opened when you click them.
