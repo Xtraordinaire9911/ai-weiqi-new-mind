@@ -38,6 +38,18 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
   `.gitignore` now also covers video, audio, network weights and credential files. New `.gitattributes` keeps SGF files and `data/library.js` on LF line endings.
 
+- 查看器的视野改为完全由用户控制:去掉了「视角:自动」(它会在讲解提到征子、外势等词时自己切到全盘)。现在有「聚焦 / 扩大 / 全盘」三档,用棋盘下方的「－」「＋」逐档缩放,选择会记在浏览器里,换手、换棋谱集合都不变。聚焦范围仍按每个棋谱集合的棋子算一次。讲解提到的外围子如果在当前范围之外,提示条会写出来并带「显示全盘」按钮,由你决定要不要看。
+
+  The viewer's zoom is now controlled by the user only. The "视角:自动" mode is gone: it switched to the full board by itself when the commentary mentioned things like 征子 or 外势. There are three steps (聚焦 focus / 扩大 wider / 全盘 full board), changed with the "－" and "＋" buttons under the board, remembered in the browser and unchanged when you step or switch collection. The focus crop is still computed once per collection from its stones. If outer stones mentioned in the commentary are outside the current view, the hint line says so and offers a "显示全盘" button, so you decide whether to look.
+
+- 控制栏改成固定几何:每个按钮宽度固定,按钮位置不随手数、缩放、讲解或棋谱集合变化(「演示征子」不再隐藏,只是变灰),缩放按钮和步进按钮之间有空档和分隔线,说明条和手顺栏的空间是预留的,棋盘列在出现滚动条时也不会变窄。手机和平板上是 6 列 2 行的网格。
+
+  The control bar now has a fixed geometry. Every button has a fixed width and keeps its place whatever the move, zoom, commentary or collection is (the ladder demo button is dimmed instead of hidden), the zoom buttons are set apart from the step buttons by a gap and a rule, the caption strip and the path bar have reserved space, and the board column keeps its width when a scrollbar appears. On phones and tablets the bar is a grid of 6 columns and 2 rows.
+
+- 新增快进和快退:⏪ 后退 5 手,⏩ 前进 5 手(沿右侧列表选中的变化走,到终点为止),键盘用 PageUp、PageDown 或 Shift+左右方向键。「上一手」不再走到根节点之前的空棋盘上。
+
+  Added fast rewind and fast forward: ⏪ back 5 moves, ⏩ forward 5 moves (along the variation selected in the right-hand list, up to the end of the line), with PageUp, PageDown or Shift with the left and right arrows on the keyboard. The previous button no longer steps past the first node onto an empty board.
+
 ### 修复 / Fixed
 
 - `tools/build.ps1` 写出的占位 SGF 文件,文字里带有未转义的 `]`(就是 "C[]" 这几个字),所以不是合法的 SGF。现在改了文字,并且对分组名、来源名和视频标题做了转义。仓库里已有的 90 个占位文件没有动,等对应分组填充内容时会被替换,`tools/check_repo.py` 把它们汇总成一条警告。
