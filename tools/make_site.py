@@ -23,7 +23,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SHELL_FILES = ['index.html', 'mobile.js', 'pwa.js', 'sw.js', 'engine_core.js', 'engine_net.js', 'engine_panel.js', 'quiz_core.js', 'quiz.js',
+SHELL_FILES = ['index.html', 'mobile.js', 'pwa.js', 'sw.js', 'engine_core.js', 'engine_net.js', 'engine_panel.js', 'nav_core.js', 'quiz_core.js', 'quiz.js',
                'manifest.webmanifest']
 ICONS = ['icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png']
 TEACHER = '【老师讲解'

@@ -37,3 +37,13 @@ The tests cover: the extraction rules on toy trees (branch points, AN nodes, ski
 ```
 docker run --rm -v "$PWD:/app:ro" -v "$PWD/data/library.js:/data/library.js:ro" -w /app node:20-alpine node tests/scan_library.js /data/library.js
 ```
+
+## 视野与控制栏 / Zoom and the control bar
+
+`nav_core.js` 放着棋盘控制的纯逻辑:视野的三档(聚焦、扩大、全盘)和步进、记在 localStorage 里的状态、沿选中的变化快进 5 手和快退 5 手、按键到动作的对应、视野之外的点。对应的测试是 `nav_core.test.js`。`bar_layout.test.js` 读取 `index.html`、`mobile.js` 和 `engine_panel.js` 的源码,守住控制栏的几何规则:按钮顺序、固定宽度的类、没有 `display:none`、标签不在运行时改变、说明条和手顺栏有预留高度、视野只由用户设置、手机布局不丢按钮。它们证明不了按钮真的没有移动,那要在浏览器里量矩形;它们只是挡住常见的改坏方式。
+
+`nav_core.js` holds the pure logic of the board controls: the three zoom steps (focus, wider, full board) and the stepping between them, the state kept in localStorage, jumping 5 moves forward along the selected variation and 5 back, the mapping from keys to actions, and the points that lie outside the view. `nav_core.test.js` tests it. `bar_layout.test.js` reads the source of `index.html`, `mobile.js` and `engine_panel.js` and guards the geometry rules of the control bar: the button order, the fixed width classes, no `display:none`, labels that never change at run time, reserved height for the caption strip and the path bar, a zoom that only the user sets, and a phone layout that does not lose a button. They cannot prove that no button moves, that needs measuring the rectangles in a browser; they only stop the usual ways of breaking it.
+
+```
+docker run --rm -v "$PWD:/app:ro" -w /app node:20-alpine node --test tests/nav_core.test.js tests/bar_layout.test.js
+```
