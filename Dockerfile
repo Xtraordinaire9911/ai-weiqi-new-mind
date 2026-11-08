@@ -15,6 +15,7 @@ RUN pip install pytest==8.3.4 numpy==2.1.3
 
 COPY pytest.ini ./
 COPY pipeline pipeline
+COPY remote remote
 COPY tools tools
 COPY data/sgf data/sgf
 COPY data/sources data/sources
