@@ -5,6 +5,9 @@ No GPU, no network. Behaviour is steered with env vars so the tests can reproduc
   FAKE_CRASH_AFTER=n                exit abruptly after n answers
   FAKE_STALL_AFTER=n                keep reading but stop answering after n answers
   FAKE_QUERY_LOG=path               append every received query id to this file
+  FAKE_REQUEST_LOG=path             append one json line per request (id, number of moves, initialPlayer) except the self test
+  FAKE_DELAY=seconds                wait this long before every answer except the self test (slow engine, lets a test kill a run midway)
+  FAKE_START_DELAY=seconds          wait this long before reading the first request (cold start of a cloud GPU)
 """
 import json
 import os
@@ -16,6 +19,9 @@ REPORT_AS = os.environ.get("FAKE_REPORT_AS", "BLACK")
 CRASH_AFTER = int(os.environ.get("FAKE_CRASH_AFTER", "0"))
 STALL_AFTER = int(os.environ.get("FAKE_STALL_AFTER", "0"))
 QUERY_LOG = os.environ.get("FAKE_QUERY_LOG")
+DELAY = float(os.environ.get("FAKE_DELAY", "0"))
+START_DELAY = float(os.environ.get("FAKE_START_DELAY", "0"))
+REQUEST_LOG = os.environ.get("FAKE_REQUEST_LOG")
 
 
 def answer(req):
@@ -43,6 +49,8 @@ def answer(req):
 
 def main():
     answered = 0
+    if START_DELAY:
+        time.sleep(START_DELAY)
     for line in sys.stdin:
         line = line.strip()
         if not line:
@@ -51,8 +59,13 @@ def main():
         if QUERY_LOG:
             with open(QUERY_LOG, "a", encoding="utf-8") as f:
                 f.write(req["id"] + "\n")
+        if REQUEST_LOG and req["id"] != "selftest":
+            with open(REQUEST_LOG, "a", encoding="utf-8") as f:
+                f.write(json.dumps({"id": req["id"], "moves": len(req.get("moves", [])), "initialPlayer": req.get("initialPlayer")}) + "\n")
         if STALL_AFTER and answered >= STALL_AFTER:
             continue                                          # silent engine
+        if DELAY and req["id"] != "selftest":
+            time.sleep(DELAY)
         sys.stdout.write(json.dumps(answer(req)) + "\n")
         sys.stdout.flush()
         answered += 1

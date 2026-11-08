@@ -40,6 +40,14 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 ### 修复 / Fixed
 
+- 云端批处理（`remote/`）落后于加固后的本机流水线：输出没有 `_meta`（树指纹、视角、完整标记），请求一次性全部写给引擎，也没有检查点。现在 `analyze_remote.py` 对每个分组直接调用 `pipeline/analyze2.py`，笔记本把它和 `treesync.py`、`wqutil.py` 一起写进工作目录，结果可以原样放进本机工作文件夹，不需要 `wq.py stamp`。新增 `remote/pack_inputs.py` 打包变化树（只含变化树，不含讲解文字），`setup_katago.py` 用发布页公布的 sha256 校验下载，笔记本核对权重文件的 sha256。测试在 `tests/test_remote_batch.py`。
+
+  The cloud batch (`remote/`) had fallen behind the hardened local pipeline: its output had no `_meta` (tree fingerprint, perspective, complete flag), it wrote all requests to the engine at once and had no checkpoint. `analyze_remote.py` now calls `pipeline/analyze2.py` for every group, the notebook writes it into the working directory together with `treesync.py` and `wqutil.py`, and the results can be dropped into the local work folder as they are, no `wq.py stamp` needed. New `remote/pack_inputs.py` packs the variation trees (trees only, no commentary), `setup_katago.py` checks its download against the sha256 published on the release page, and the notebook checks the sha256 of the weights file. The tests are in `tests/test_remote_batch.py`.
+
+  云端脚本还给没有着法的请求（摆子局面的节点）显式写入 `initialPlayer`：以前 KataGo 默认黑棋先走，老师接着走白棋的摆子局面按错误的一方分析了。规则与本机 `analyze2.py` 里的修复相同，测试在 `tests/test_remote_batch.py`。
+
+  The cloud script also states `initialPlayer` explicitly for requests without moves (nodes of a position set up from stones): KataGo used to assume Black to move, so a set-up position where the teacher continues with White was analysed for the wrong side. The rule is the same as the fix in the local `analyze2.py`; the tests are in `tests/test_remote_batch.py`.
+
 - `tools/build.ps1` 写出的占位 SGF 文件,文字里带有未转义的 `]`(就是 "C[]" 这几个字),所以不是合法的 SGF。现在改了文字,并且对分组名、来源名和视频标题做了转义。仓库里已有的 90 个占位文件没有动,等对应分组填充内容时会被替换,`tools/check_repo.py` 把它们汇总成一条警告。
 
   The placeholder SGF files written by `tools/build.ps1` contained an unescaped `]` in their text (the words "C[]"), so they were not valid SGF. The text is changed and group names, source names and video titles are now escaped. The 90 placeholders already in the repo are untouched, they get replaced when a group is filled in, and `tools/check_repo.py` reports them as one warning.

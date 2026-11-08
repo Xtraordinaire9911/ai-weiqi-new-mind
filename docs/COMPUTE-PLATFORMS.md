@@ -127,6 +127,10 @@ What these answers decide: which KataGo build to use (a T4 and a P100 differ in 
 
 ### 3.3 Colab 笔记本 / Colab notebooks
 
+笔记本现在自己完成下面第 3 步的检查：第一个单元格打印 `nvidia-smi`、磁盘、内存和到 GitHub 的网络状态，把那一段输出原样贴回来即可。变化树用 `remote/pack_inputs.py` 打成 `n_json_<日期>.zip`，权重文件会按 sha256 核对。整个流程见 `remote/README.md` 第 3 节。
+
+The notebook now makes the checks of step 3 below by itself: its first cell prints `nvidia-smi`, disk, memory and the network state towards GitHub, and that block can be pasted back as it is. The variation trees are packed into `n_json_<date>.zip` with `remote/pack_inputs.py`, and the weights are checked by sha256. The whole procedure is in section 3 of `remote/README.md`.
+
 1. 用你自己的 Google 账号打开 colab.research.google.com,上传 `remote/katago_batch.ipynb`。
 
    Open colab.research.google.com with your own Google account and upload `remote/katago_batch.ipynb`.

@@ -4,8 +4,10 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PIPELINE = os.path.join(ROOT, "pipeline")
-if PIPELINE not in sys.path:
-    sys.path.insert(0, PIPELINE)
+REMOTE = os.path.join(ROOT, "remote")   # analyze_remote.py, pack_inputs.py, make_notebook.py (the cloud batch tools)
+for _p in (PIPELINE, REMOTE):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 
 import importlib  # noqa: E402

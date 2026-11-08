@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """Self-test that needs no GPU and no KataGo: uses a "fake engine" (Black's-perspective output, matching reportAnalysisWinratesAs=BLACK) to verify
-  1) analyze_remote.py: perspective conversion (side to move), region / branch points / forced evaluation / resume logic;
-  2) optional: byte-for-byte comparison of the output with the local analyze2.py (--ref D:\\tmp\\work\\analyze2.py), proving the port is identical;
-  3) katago_bridge.py: query validation, token / CORS / HTTP handling on in-memory streams;
-  4) katago_bridge.py on a real loopback socket (127.0.0.1, random port, closed when the test ends): the NDJSON stream over a chunked response, terminate,
+  1) analyze_remote.py: it runs pipeline/analyze2.py, so the output must pass treesync.check_analysis as it is (tree fingerprint, side-to-move
+     perspective, complete flag); region / branch points / forced evaluation and the skip of finished groups;
+  2) katago_bridge.py: query validation, token / CORS / HTTP handling on in-memory streams;
+  3) katago_bridge.py on a real loopback socket (127.0.0.1, random port, closed when the test ends): the NDJSON stream over a chunked response, terminate,
      preemption, client disconnect, the operator's model allowlist, /switch with progress and rollback, /health, log hygiene.
-Run:  python selftest.py [--ref path/to/analyze2.py]
+The deeper tests of the cloud batch path (resume after a kill, notebook cells, packing) are in tests/test_remote_batch.py (Docker, see tests/README.md).
+Run:  python selftest.py
 Note: the fake engine's numbers are made up and only exercise the pipeline logic; they say nothing about Go.
 """
-import io, json, os, subprocess, sys, tempfile, argparse, runpy, threading, time, http.client
+import io, json, os, subprocess, sys, tempfile, argparse, threading, time, http.client
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 L = 'ABCDEFGHJKLMNOPQRST'
@@ -21,14 +22,17 @@ def respond(q):
     occ = {loc for _, loc in q.get('initialStones', [])} | {loc for _, loc in q['moves'] if loc != 'pass'}
     t = ('W' if q['moves'][-1][0] == 'B' else 'B') if q['moves'] else q.get('initialPlayer', 'B')
     allow = next((a['moves'] for a in q.get('allowMoves', []) if a['player'] == t), None)
+    if allow is None:   # the perspective self test of analyze2 has no allowMoves: every point of the board is allowed
+        allow = [L[c] + str(r) for c in range(19) for r in range(1, 20)]
     free = [m for m in allow if m not in occ][:6]
     vis = [150, 60, 30, 12, 6, 3]
     infos = []
     for i, m in enumerate(free):  # Black's perspective: Black leads by about 3 points whoever is to move (so with W to move the side-to-move score must be negative)
         infos.append({'move': m, 'visits': vis[i], 'order': i, 'scoreLead': 3.0 + 0.1 * i, 'winrate': 0.6 - 0.01 * i,
                       'prior': 0.3 / (i + 1), 'pv': [m] + free[i + 1:i + 4]})
+    sel = q['id'] == 'selftest'   # handicap position with White to move: a real engine says Black is far ahead
     return {'id': q['id'], 'turnNumber': len(q['moves']),
-            'rootInfo': {'currentPlayer': t, 'scoreLead': 3.0, 'winrate': 0.6, 'visits': q['maxVisits']}, 'moveInfos': infos}
+            'rootInfo': {'currentPlayer': t, 'scoreLead': 30.0 if sel else 3.0, 'winrate': 0.97 if sel else 0.6, 'visits': q['maxVisits']}, 'moveInfos': infos}
 
 
 def fake_engine():
@@ -95,8 +99,8 @@ def synth_tree():
             if len(pos) < 40:
                 pos.append(('B' if (c + r) % 2 else 'W') + str(k(c, r)))
     pos.append('B' + str(k(16, 2)))  # one far-away stone outside the region -> triggers the "_0" control query
-    mk = lambda mv, par, ch, dead=False, setup=False, p='': {'dead': dead, 'mv': mv, 'par': par, 'ch': ch, 'setup': setup, 'pos': p}
-    return [
+    mk = lambda mv, par, ch, dead=False, setup=False, p='': {'dead': dead, 'mv': mv, 'par': par, 'ch': ch, 'setup': setup, 'pos': p, 'v': [], 'n': 0}
+    tree = [
         mk(None, 0, [1, 2, 3], setup=True, p=' '.join(pos)),
         mk([k(5, 12), 'B'], 0, [4, 5]),
         mk([k(6, 13), 'B'], 0, []),
@@ -106,6 +110,9 @@ def synth_tree():
         mk([k(6, 14), 'B'], 5, []),
         mk([k(7, 13), 'B'], 5, []),
     ]
+    for i, n in enumerate(tree):
+        n['id'] = i   # the pipeline's tree fingerprint and analyze2 index the list by id
+    return tree
 
 
 def check(cond, msg):
@@ -117,20 +124,26 @@ def check(cond, msg):
 check.bad = 0
 
 
-def test_pipeline(ref):
-    print('[1] analyze_remote.py (fake engine)')
+def test_pipeline():
+    print('[1] analyze_remote.py (fake engine) around pipeline/analyze2.py')
+    sys.path.insert(0, os.path.join(os.path.dirname(HERE), 'pipeline'))
+    import treesync
     d = tempfile.mkdtemp(prefix='kgtest_')
     ind, outd = os.path.join(d, 'in'), os.path.join(d, 'out')
     os.makedirs(ind)
     # Non-ASCII group name on purpose (the real group names are Chinese): "g_" + "test-fake-data" in Chinese, written as escapes
-    nfile = os.path.join(ind, 'g_\u6d4b\u8bd5-\u5047\u6570\u636e.n.json')
-    json.dump(synth_tree(), open(nfile, 'w'))
+    nfile = os.path.join(ind, 'g_测试-假数据.n.json')
+    tree = synth_tree()
+    json.dump(tree, open(nfile, 'w'))
     eng = '"%s" "%s" --fake-engine' % (sys.executable.replace('\\', '/'), os.path.abspath(__file__).replace('\\', '/'))
-    cmd = [sys.executable, os.path.join(HERE, 'analyze_remote.py'), '--in', ind, '--out', outd, '--engine-cmd', eng]
+    cmd = [sys.executable, os.path.join(HERE, 'analyze_remote.py'), '--in', ind, '--out', outd, '--engine-cmd', eng, '--window', '2']
     r = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')
     check(r.returncode == 0, 'analyze_remote exit code 0' + ('' if r.returncode == 0 else '\n' + r.stdout[-600:] + r.stderr[-600:]))
-    outp = os.path.join(outd, 'g_\u6d4b\u8bd5-\u5047\u6570\u636e.a2.json')
+    outp = os.path.join(outd, 'g_测试-假数据.a2.json')
     res = json.load(open(outp))
+    meta = res.pop('_meta')
+    check(treesync.check_analysis(tree, dict(res, _meta=meta)) == ('ok', ''), 'the output passes treesync.check_analysis as it is (fingerprint, schema, perspective, complete): no wq.py stamp needed')
+    check(meta['persp'] == 'stm' and meta['report_as'] == 'BLACK' and meta['report_as_source'] == 'selftest', 'meta says side to move, and the live self test found that the engine reports Black')
     check(set(res) >= {'0', '1', '5', '0_0', '1_0', '5_0'}, 'contains the 3 branch points and the out-of-region control queries: ' + ','.join(sorted(res)))
     check(all(a.get('turn') in ('B', 'W') for a in res.values()), 'every result has a turn')
     ok = all((a['score'] > 0) == (a['turn'] == 'B') and all((c['s'] > 0) == (a['turn'] == 'B') for c in a['cand']) for a in res.values())
@@ -140,20 +153,7 @@ def test_pipeline(ref):
     check(all(len(c['pv']) <= 8 for a in res.values() for c in a['cand']), 'pv has at most 8 moves')
     check(os.path.exists(outp[:-5] + '.meta.json'), 'wrote the .a2.meta.json side file')
     r2 = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')
-    check('skip (exists)' in r2.stdout, 'a second run skips finished groups automatically (resume)')
-    if ref:
-        print('[1b] comparison with analyze2.py (%s)' % ref)
-        out_ref = os.path.join(d, 'ref.a2.json')
-        script = ("import subprocess,sys,runpy\n"
-                  "_P=subprocess.Popen\n"
-                  "def _fake(args,**kw):return _P([sys.executable,%r,'--fake-engine'],**kw)\n"
-                  "subprocess.Popen=_fake\n"
-                  "sys.argv=[%r,%r,%r,'220','100']\n"
-                  "runpy.run_path(%r,run_name='__main__')\n") % (os.path.abspath(__file__), ref, nfile, out_ref, ref)
-        rr = subprocess.run([sys.executable, '-c', script], capture_output=True, text=True, encoding='utf-8')
-        check(rr.returncode == 0 and os.path.exists(out_ref), 'analyze2.py runs fine on the fake engine' + ('' if rr.returncode == 0 else '\n' + rr.stderr[-500:]))
-        if os.path.exists(out_ref):
-            check(open(out_ref, 'rb').read() == open(outp, 'rb').read(), 'output is **byte-for-byte identical** to analyze2.py')
+    check('skip (exists, valid)' in r2.stdout, 'a second run skips finished groups automatically (resume)')
 
 
 # ----------------------------------------------------------------------------- bridge: helpers
@@ -636,10 +636,7 @@ if __name__ == '__main__':
         sys.stdout.reconfigure(encoding='utf-8')
     except Exception:
         pass
-    ap = argparse.ArgumentParser()
-    ap.add_argument('--ref', default='', help='path of the local analyze2.py, used for the byte-for-byte comparison')
-    a = ap.parse_args()
-    test_pipeline(a.ref)
+    test_pipeline()
     test_bridge()
     test_sockets()
     test_launcher()
