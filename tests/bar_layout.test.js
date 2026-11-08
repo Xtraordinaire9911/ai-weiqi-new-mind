@@ -104,6 +104,7 @@ test('the zoom is stored only in a guarded localStorage access and nav_core.js i
 test('the fast step uses NC.FAST and the keys go through NC.keyAction', () => {
   assert.match(html, /NC\.stepForward\(cur,sel,NC\.FAST\)/);
   assert.match(html, /NC\.stepBack\(cur,NC\.FAST,tree\)/);
+  assert.match(html, /b1:\(\)=>cur!==tree&&cur\.up&&go\(cur\.up\)/, 'the step back button does not walk onto the empty helper node of the parser');
   assert.match(html, /NC\.keyAction\(e\)/);
   assert.match(html, /onkeydown=e=>/, 'assigned as a property, the training view saves and restores it');
 });

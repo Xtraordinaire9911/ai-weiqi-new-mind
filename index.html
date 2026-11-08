@@ -302,9 +302,10 @@ function withCredit(sgf){
  const add=[['AP','ai-weiqi-new-mind:'+VIEWER_VER],['CP',CREDIT_CP],['SO',REPO_URL]].filter(([k])=>!have.has(k)).map(([k,v])=>k+'['+sgfEsc(v)+']').join('');
  return add?sgf.slice(0,last)+add+sgf.slice(last):sgf}
 // Fast steps (NC.FAST = 5 moves, reasons in nav_core.js): forward follows the variation selected in the list and stops at a leaf, back walks up the parents and stops at the root `tree`.
+// The step back button stops at the root too: parse() hangs the root under an empty helper node, and going up from the root used to land on that empty board.
 // go() clears the previews (hot, ghost, hover, ladder text); the tooltip is hidden here too so none is left floating over the new position. The zoom is not touched.
 function jump(dir){const r=dir>0?NC.stepForward(cur,sel,NC.FAST):NC.stepBack(cur,NC.FAST,tree);if(r.node!==cur){tip.style.display='none';go(r.node)}}
-const nav={b0:()=>go(tree),b1:()=>cur.up&&go(cur.up),b2:()=>cur.c[sel]&&go(cur.c[sel]),b3:()=>{let n=cur;while(n.c[0])n=n.c[0];go(n)},br5:()=>jump(-1),bf5:()=>jump(1)};
+const nav={b0:()=>go(tree),b1:()=>cur!==tree&&cur.up&&go(cur.up),b2:()=>cur.c[sel]&&go(cur.c[sel]),b3:()=>{let n=cur;while(n.c[0])n=n.c[0];go(n)},br5:()=>jump(-1),bf5:()=>jump(1)};
 for(const k in nav)$(k).onclick=nav[k];$('bn').onclick=()=>{showN=!showN;draw()};$('bzo').onclick=()=>setZoom(NC.stepZoom(viewMode,NC.OUT,view));$('bzi').onclick=()=>setZoom(NC.stepZoom(viewMode,NC.IN,view));$('hintb').onclick=()=>setZoom(NC.ZOOM.FULL);$('bl').onclick=ladderDemo;$('ba').onclick=()=>{showAI=!showAI;draw()};$('bk').onclick=()=>navigator.clipboard.writeText(withCredit(col.sgf));
 // Keys: arrows, Home, End and Up/Down for the variation list as before; PageUp / PageDown and Shift+Left / Shift+Right are the fast steps. Text fields (and selects) keep their own keys.
 onkeydown=e=>{if(/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName))return;const a=NC.keyAction(e);if(!a)return;
