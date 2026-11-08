@@ -28,7 +28,7 @@ The project turns the joseki lessons of the Go teacher 陈林涛 (Chen Lintao) o
 |---|---|
 | 视频总数 / Videos in total | 115 个，约 20.4 小时：定式大全 52、套路研究 18、避雷 45（来自 `data/sources/chenlintao/index.json`）/ 115, about 20.4 hours: 52 + 18 + 45 (from `index.json`) **[已运行 / ran]** |
 | `develop` 上的数据 / Data on `develop` | 94 个分组文件，只有 4 个有内容，1 个带 AI 评估，数据时间 11-01 05:18 / 94 group files, only 4 have content, 1 has AI evaluation, data stamp 11-01 05:18 **[已运行 / ran]** |
-| 作者电脑上的工作目录（尚未提交） / The owner's working copy (not committed) | 94 个里有 47 个有内容：定式大全 29/31（13 个带 AI 评估，20 个带要点），套路研究 2/18，避雷 16/45；全部通过 SGF 校验 / 47 of 94 have content: 29/31 in 定式大全 (13 with AI evaluation, 20 with key points), 2/18 and 16/45 in the other two series; all pass SGF validation **[已运行 / ran]** |
+| 作者电脑上的工作目录（尚未提交） / The owner's working copy (not committed) | 94 个里有 47 个有内容：定式大全 29/31（15 个带 AI 评估，29 个带要点），套路研究 2/18，避雷 16/45；全部通过 SGF 校验；数字随流水线在变，这是 06:13 的读数 / 47 of 94 have content: 29/31 in 定式大全 (15 with AI evaluation, 29 with key points), 2/18 and 16/45 in the other two series; all pass SGF validation; the numbers move as the pipeline runs, these are the readings of 06:13 **[已运行 / ran]** |
 | 自动测试 / Automated tests | Python 273 个（3 个跳过，见 6.1）和 Node 118 个，没有失败 / 273 Python tests (3 skipped, see 6.1) and 118 Node tests, no failure **[已运行 / ran]** |
 | 版本 / Versions | 项目 `VERSION` 0.1，查看器界面 v4.7 / project `VERSION` 0.1, viewer interface v4.7 |
 
@@ -143,32 +143,27 @@ It has to be automated because of the volume: 115 videos, about 20 hours, nobody
 The diagram shows the whole road. "Stage A" on the left runs once per video, "stage B" on the right runs once per "group". A group is the set of videos about the same joseki merged into one tree (for example three videos about one approach and its answers become one group), and `data/sources/chenlintao/plan.json` decides the groups.
 
 ```mermaid
-flowchart LR
+flowchart TD
   subgraph A["阶段 A 每个视频 / Stage A per video"]
-    V["B站视频 / Bilibili video"] --> DL["下载 download()"]
-    DL --> MP4["v.mp4"]
-    MP4 --> BD["board.py 识棋盘"]
-    MP4 --> TR["tr.py 转写"]
+    DL["下载 download() 得到 v.mp4"] --> BD["board.py 识棋盘"]
+    DL --> TR["tr.py 转写"]
     BD --> BJ["b.json 棋盘帧"]
     TR --> TJ["t.json 逐句文字"]
   end
   subgraph B["阶段 B 每个分组 / Stage B per group"]
-    BJ --> BT["build_tree()"]
-    BT --> NJ["n.json 变化树"]
-    NJ --> AZ["analyze2.py + KataGo"]
+    BT["build_tree() 建树 n.json"] --> AZ["analyze2.py + KataGo"]
     AZ --> A2["a2.json AI 评估"]
-    NJ --> KPI["kpin 导出"]
-    KPI --> KP["kp json 要点笔记"]
-    TJ --> MG["merge() 合并"]
-    NJ --> MG
-    A2 --> MG
-    KP --> MG
-    MG --> GATE["sgfcheck 校验 + 原子写入"]
+    BT --> KPI["kpin 导出, 助手写出 kp json 要点"]
+    MG["merge() 合并"] --> GATE["sgfcheck 校验 + 原子写入"]
   end
+  BJ --> BT
+  TJ --> MG
+  BT --> MG
+  A2 --> MG
+  KPI --> MG
   GATE --> SGF["data/sgf/ 下的 SGF"]
-  SGF --> BLD["tools/build.ps1"]
-  BLD --> LIB["data/library.js"]
-  LIB --> VIEW["index.html 查看器"]
+  SGF --> BLD["tools/build.ps1 打包成 library.js"]
+  BLD --> VIEW["index.html 查看器"]
 ```
 
 图：视频先拆成文字和棋盘画面两路，在阶段 B 汇合成带评估的 SGF，再打包给查看器。
@@ -462,9 +457,9 @@ In practice this check really works: the videos of the other two series have wid
 
 ### 2.5 建变化树 / Building the variation tree
 
-**做什么 / What。** `build_tree(vids)`（`orch2.py` L106-145）把一个分组的所有视频的"棋盘帧"，变成一棵变化树。输入是 `b.json`：每帧一个 342 字符的字符串；输出是一个节点列表，每个节点有编号 `id`、父节点 `par`、这一手 `mv`（点的编号和颜色）、出现的时间段 `v`（`[开始, 结束, 第几个视频]`）、子节点 `ch`、是否被删除 `dead`、是否是"摆好的起始局面" `setup`、局面 `pos`。
+**做什么 / What。** `build_tree(vids)`（`orch2.py` L107-145）把一个分组的所有视频的"棋盘帧"，变成一棵变化树。输入是 `b.json`：每帧一个 342 字符的字符串；输出是一个节点列表，每个节点有编号 `id`、父节点 `par`、这一手 `mv`（点的编号和颜色）、出现的时间段 `v`（`[开始, 结束, 第几个视频]`）、子节点 `ch`、是否被删除 `dead`、是否是"摆好的起始局面" `setup`、局面 `pos`。
 
-`build_tree(vids)` (`orch2.py` L106-145) turns the "board frames" of all videos of a group into a variation tree. The input is `b.json`: one string of 342 characters per frame. The output is a list of nodes, each with an `id`, a parent `par`, the move `mv` (point number and colour), the time spans `v` (`[start, end, which video]`), the children `ch`, whether it was deleted `dead`, whether it is a "laid out starting position" `setup`, and the position `pos`.
+`build_tree(vids)` (`orch2.py` L107-145) turns the "board frames" of all videos of a group into a variation tree. The input is `b.json`: one string of 342 characters per frame. The output is a list of nodes, each with an `id`, a parent `par`, the move `mv` (point number and colour), the time spans `v` (`[start, end, which video]`), the children `ch`, whether it was deleted `dead`, whether it is a "laid out starting position" `setup`, and the position `pos`.
 
 算法按帧一帧一帧走，每一帧要回答"现在的局面，和已经建好的树是什么关系"，只有四种情况：
 
@@ -508,9 +503,9 @@ This algorithm has several approximations you should know. A position is a set o
 
 `pipeline/analyze2.py` picks some nodes of a group's variation tree and lets KataGo evaluate them. It runs KataGo as a child process (`katago analysis`, L46-49), writes one JSON request per line to its standard input and reads one JSON answer per line from its standard output. This "one JSON per line" format is called NDJSON, like a stack of postcards, one question or one answer per card. The neural network KataGo uses is `kata1-tf3-b11c768-s12752M-d6531M.bin.gz` (the "weights" file, a Transformer network, its path is in `cfg()`, L34-43), run with OpenCL on the owner's integrated GPU, and the baseline recorded in `remote/README.md` is about 11 seconds per query (220 visits), 30 to 40 minutes per group **[from `remote/README.md`, I did not measure it again]**.
 
-**为什么只分析分叉点 / Why branch points only。** `branch_nodes()`（L269-273）只选两类节点：有两个以上活的子节点的分叉点，以及"摆好的起始局面"后面的第一个节点。叶子节点（没有后续）和单链节点（只有一条路）没有什么可比较的，评估它们既花时间又没有信息。一个有几百个节点的分组，真正被分析的只有几十到两百多个节点（作者电脑上已经完成的分组是 67 到 239 个）**[已运行 / ran]**。
+**为什么只分析分叉点 / Why branch points only。** `branch_nodes()`（L269-273）只选两类节点：有两个以上活的子节点的分叉点，以及"摆好的起始局面"后面的第一个节点。叶子节点（没有后续）和单链节点（只有一条路）没有什么可比较的，评估它们既花时间又没有信息。一个有几百个节点的分组，真正被分析的只有几十到两百多个节点（作者电脑上已经完成的分组是 60 到 239 个）**[已运行 / ran]**。
 
-`branch_nodes()` (L269-273) picks only two kinds of nodes: branch points with two or more live children, and the first node after a "laid out starting position". Leaves (nothing after them) and nodes on a single chain (only one road) have nothing to compare, so evaluating them costs time and carries no information. A group with several hundred nodes really gets only some tens to two hundred and some nodes analysed (the finished groups on the owner's computer have 67 to 239) **[ran]**.
+`branch_nodes()` (L269-273) picks only two kinds of nodes: branch points with two or more live children, and the first node after a "laid out starting position". Leaves (nothing after them) and nodes on a single chain (only one road) have nothing to compare, so evaluating them costs time and carries no information. A group with several hundred nodes really gets only some tens to two hundred and some nodes analysed (the finished groups on the owner's computer have 60 to 239) **[ran]**.
 
 **为什么只搜一个区域 / Why a region。** 如果让 KataGo 在全盘搜索，它经常会说"最好的一手是去别处下一个大场"，对研究这个角上的定式毫无用处；周围的棋子还会让结论随外面的情况摇摆。所以 `region()`（L189-218）先算出这个分组所有着法（加上起始局面里的子）的 x 坐标和 y 坐标的第 3% 到第 97% 分位，再向外扩 2 路，靠近边线（小于等于第 4 路）就贴到边上，得到一个矩形。然后 `query()`（L254-262）里的 `allowMoves` 把黑白双方的候选点都限制在这个矩形里，`untilDepth: 40` 表示搜索树的前 40 层都遵守这个限制。结果是：AI 说的"最优"是"只在这个区域里下的最优"，像对朋友说"假设棋盘别处都不许下，你觉得这里怎么走最好"。取分位数而不是最小最大值，是为了让个别跑到很远的着法不要把矩形撑得过大。
 
@@ -886,7 +881,7 @@ The key design principle is "the panel re-implements no rule": the position to r
 
 The "训练" (training) button of the toolbar enters a practice mode in the style of a "practical problem bank": the system poses a question from a joseki, gives you a position, you click on the board the next move you think is right, it judges right or wrong, explains how the teacher and the AI see it, and schedules when you should do this question again by a "memory curve". All the logic is in `quiz_core.js` (412 lines, pure logic, testable in Node), the interface is in `quiz.js` (374 lines). Following your product goal, the play style takes the practical problem bank of 涨棋网 as a model **[this comes from your requirement, not from the code]**.
 
-**怎么出题 / How questions are made。** `extractQuestions()`（`quiz_core.js` L157-185）：棋谱里每个有两个以上老师后续、或者带有 `AN` 数据的节点，就是一道题——局面是到这个节点为止的棋子，任务是行棋方的下一手。如果这个节点既没有老师讲解文字也没有 AN，就跳过；如果合理的着法不足两个，也跳过（太简单或没法判断）。行棋方由 `questionSide()`（L111-115）决定：有 `PL` 就用 `PL`，没有就看老师的着法是不是同一种颜色，再不行才按"上一手的对方"。题目编号是"局面的着法路径"的 53 位哈希（`hash53()`，L131-140），所以即使数据重新生成，只要局面不变，你的学习进度就不会丢。
+**怎么出题 / How questions are made。** `extractQuestions()`（`quiz_core.js` L157-185）：棋谱里每个有两个以上老师后续、或者带有 `AN` 数据的节点，就是一道题：局面是到这个节点为止的棋子，任务是行棋方的下一手。如果这个节点既没有老师讲解文字也没有 AN，就跳过；如果合理的着法不足两个，也跳过（太简单或没法判断）。行棋方由 `questionSide()`（L111-115）决定：有 `PL` 就用 `PL`，没有就看老师的着法是不是同一种颜色，再不行才按"上一手的对方"。题目编号是"局面的着法路径"的 53 位哈希（`hash53()`，L131-140），所以即使数据重新生成，只要局面不变，你的学习进度就不会丢。
 
 `extractQuestions()` (`quiz_core.js` L157-185): every node of the game record that has two or more teacher continuations, or carries `AN` data, is a question: the position is the stones up to this node, the task is the next move of the side to move. A node with neither teacher text nor AN is skipped, and so is one with fewer than two sensible moves (too easy, or impossible to judge). The side to move is decided by `questionSide()` (L111-115): `PL` if there is one, otherwise whether the teacher's moves all have the same colour, and only then "the opponent of the last move". The question id is a 53 bit hash of "the move path of the position" (`hash53()`, L131-140), so even if the data is regenerated, your learning progress is not lost as long as the position stays the same.
 
