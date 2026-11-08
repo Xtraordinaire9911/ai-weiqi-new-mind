@@ -48,3 +48,18 @@ def toy(tmp_path, monkeypatch):
     ns.N = o.build_tree([1])
     ns.sgf_file = o.sgf_path("toy-group")
     return ns
+
+
+@pytest.fixture
+def eng(tmp_path, monkeypatch):
+    """Environment for analyze2 runs against tests/fake_katago.py (no GPU, no model). Returns the tmp folder to work in."""
+    import json
+    import sys
+
+    fake = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fake_katago.py")
+    monkeypatch.setenv("WEIQI_KATAGO_CMD", json.dumps([sys.executable, fake]))
+    monkeypatch.setenv("WEIQI_KATAGO_DIR", str(tmp_path / "no-engine-dir"))
+    monkeypatch.setenv("WEIQI_WINDOW", "2")
+    for k in ("FAKE_REPORT_AS", "FAKE_CRASH_AFTER", "FAKE_STALL_AFTER", "FAKE_QUERY_LOG", "FAKE_REQUEST_LOG", "WEIQI_REPORT_AS", "LIMIT"):
+        monkeypatch.delenv(k, raising=False)
+    return tmp_path

@@ -32,6 +32,10 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
   The docs are bilingual, a Chinese paragraph followed by its English counterpart.
 
+- `python wq.py fix-setup-turns [--work DIR] [--dry-run | --apply]`：列出每个分组里记错行棋方的起手局面；加 `--apply` 才会用 KataGo 只重新分析这些节点，并把改正后的条目写回 `a2.json`（先备份，保留树指纹）。`wq.py check` 也会报告这种情况。
+
+  `python wq.py fix-setup-turns [--work DIR] [--dry-run | --apply]` lists, for every group, the set-up positions recorded for the wrong side; only with `--apply` does it ask KataGo again about just those nodes and write the corrected entries back into `a2.json` (backup first, tree fingerprint kept). `wq.py check` reports them too.
+
 ### 变更 / Changed
 
 - `.gitignore` 现在还涵盖视频、音频、网络权重和凭据文件。新增的 `.gitattributes` 让 SGF 文件和 `data/library.js` 保持 LF 换行。
@@ -43,6 +47,10 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - `tools/build.ps1` 写出的占位 SGF 文件,文字里带有未转义的 `]`(就是 "C[]" 这几个字),所以不是合法的 SGF。现在改了文字,并且对分组名、来源名和视频标题做了转义。仓库里已有的 90 个占位文件没有动,等对应分组填充内容时会被替换,`tools/check_repo.py` 把它们汇总成一条警告。
 
   The placeholder SGF files written by `tools/build.ps1` contained an unescaped `]` in their text (the words "C[]"), so they were not valid SGF. The text is changed and group names, source names and video titles are now escaped. The 90 placeholders already in the repo are untouched, they get replaced when a group is filled in, and `tools/check_repo.py` reports them as one warning.
+
+- 起手局面（视频开头直接摆在棋盘上、没有着法的局面）的分析请求没有带 `initialPlayer`，KataGo 自己猜先手，几乎总是黑棋，所以老师接下来走白棋的起手局面是按黑棋分析的，候选点、排序和训练题都在错误的一方。现在 `analyze2.query` 在没有着法时发送 `side_to_move()` 算出的颜色，续跑时旧检查点里记错的条目会被丢弃，合并时发现记错的条目会给出警告。不带区域外棋子的对照分析如果与主分析的行棋方不同，就不再拿它们的最优点作比较。详见 `docs/PREMORTEM.md` 的事件 12。
+
+  The analysis request for a position set up from stones (no moves, as at the start of a video) carried no `initialPlayer`, so KataGo guessed who moves first, nearly always Black. A set-up position where the teacher plays White next was therefore analysed for Black, and its candidates, ranking and quiz questions were on the wrong side. `analyze2.query` now sends the colour from `side_to_move()` when there are no moves, a resumed run drops wrongly recorded entries from an old checkpoint, and the merge warns about them. The control run without the outside stones is no longer compared with the main run when the two are for different sides. See incident 12 in `docs/PREMORTEM.md`.
 
 ## [0.1] - 2026-11-01
 
