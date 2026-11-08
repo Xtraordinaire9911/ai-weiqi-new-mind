@@ -23,10 +23,29 @@ Everything marked **done** is in the code on this branch and has a test (`tests/
 | 9. 分析进度看不见 / Analysis progress invisible | 输出被捕获后丢弃，退出码被忽略 / Output captured to memory and dropped, exit code ignored | 每个分组一个日志，进度文件带预计剩余时间，退出码会被报告，并检测卡死 / Log file per group, progress file with ETA, exit code reported, stall detection |
 | 10. 错别字规则把文字改坏 / Typo rules corrupted text | 依次执行 `str.replace`，短规则命中较长的正确词，一条规则的输出又被另一条规则处理 / Sequential `str.replace`, short rules inside longer correct words, the output of one rule fed to another | `fixtext.py`：最长优先，重复到稳定，保护词，规则日志 / `fixtext.py`: longest first, repeat until stable, protected words, rule log |
 | 11. 写死的棋盘几何给出乱码结果 / Hard coded geometry gave garbage | 识别器无条件信任版式，看到什么就写什么 / The recogniser trusted the layout and wrote whatever it saw | 自检：尺寸、棋盘帧占比、网格对齐、棋子数量是否合理；被拒绝的视频会写明原因，也不会重试 / Self check: size, board share, grid alignment, stone sanity; rejected videos get a reason and are not retried |
+| 12. 起手局面的行棋方被猜错 / First mover of a set-up position guessed | 没有着法的节点（视频开头直接摆在棋盘上的起手局面）的分析请求没有带 `initialPlayer`，KataGo 自己猜，几乎总是黑棋 / The request for a node without moves (a position set up from stones) carried no `initialPlayer` and KataGo guessed, nearly always Black | `analyze2.query` 现在发送 `side_to_move()` 算出的颜色；`wrong_turns` 找出记错的条目，续跑时丢弃旧检查点里的这类条目，合并时给出警告；`wq.py fix-setup-turns` 只重新分析这些节点 / `analyze2.query` now sends the colour from `side_to_move()`; `wrong_turns` finds wrongly recorded entries, a resumed run drops them from an old checkpoint and the merge warns; `wq.py fix-setup-turns` redoes only those nodes |
 
 共同点是：**某个阶段写出了看起来像结果的输出，却没有说明它由什么生成，也没有说明是否完整。** 修复的办法是给每个输出一个身份（指纹、meta），让"完成"真正意味着完整（原子写入、写入前校验），并让每一次拒绝都写明原因。
 
 The common thread: **a stage wrote output that looked like a result without saying what it was made from or whether it was complete**. The fixes give each output an identity (fingerprint, meta), make "done" mean complete (atomic writes, checks before writing) and make every refusal say why.
+
+### 事件 12：起手局面按错误的一方分析 / Incident 12: set-up positions analysed for the wrong side
+
+**发生了什么。** 视频开头直接摆在棋盘上的起手局面没有着法，分析请求里也没有 `initialPlayer`，KataGo 便自己猜行棋方，结果几乎总是黑棋。老师接下来走白棋的起手局面因此是按黑棋分析的：候选点的颜色、排序和训练题都落在了错误的一方。修复时，真实工作目录里有 13 个这样的节点，分布在 8 个分组；老师走黑棋的起手局面本来就没有问题。
+
+**What happened.** A position that is set up from stones at the start of a video has no moves, and its analysis request carried no `initialPlayer`, so KataGo guessed who moves, nearly always Black. A set-up position where the teacher plays White next was therefore analysed for Black: the colour of the candidate moves, the ranking and the quiz questions were all on the wrong side. When this was fixed, the real work folder held 13 such nodes in 8 groups; set-up positions where the teacher plays Black were never affected.
+
+**为什么没有发现。** 第一，测试用的假引擎对没有 `initialPlayer` 的请求也照常回答黑棋，不会报错；唯一一个没有着法的请求是启动时的视角自检，它自己带着 `initialPlayer`。第二，错误的结果看上去完全合理：首选点就是黑棋的最优点，所以 `perspective_suspect` 这类检查都通过，也没有任何检查把记录的 `turn` 与老师实际走的颜色对照。第三，受影响的只有老师走白棋的起手局面，数量很少，是读代码和读数据时才发现的。
+
+**Why it was missed.** First, the fake engine in the tests also answered Black for a request without `initialPlayer` and never complained; the only request without moves was the start-up perspective check, which brings its own `initialPlayer`. Second, the wrong result looked perfectly reasonable: the first candidate really is Black's best move, so checks such as `perspective_suspect` passed, and nothing compared the recorded `turn` with the colour the teacher plays. Third, only set-up positions where the teacher plays White are affected, and there are few of them; the bug was found by reading the code and the data.
+
+**修复。** 没有着法时，`query()` 发送 `initialPlayer`，取 `side_to_move()` 的结果：上一手的对方；起手局面则取老师接下来走的多数颜色；都没有就是黑棋。`wrong_turns()` 把记录的 `turn` 与这个结果对照：续跑时旧检查点里记错的条目会被丢弃，`orch2.stageB` 和 `wq.py check` 发现记错的条目会提示，`wq.py fix-setup-turns` 只对这些节点重新分析并写回 `a2.json`（先备份，保留指纹）。顺带一处同类问题：不带区域外棋子的对照分析会丢掉区域外的着法，可能变成另一方行棋，此时它的最优点与主分析没有可比性，所以只有两者行棋方相同才写"周边子力影响"一句。假引擎现在也和真引擎一样，没有 `initialPlayer` 就回答黑棋，所以缺了这个字段的代码会让测试失败。
+
+**The fix.** With no moves, `query()` sends `initialPlayer` from `side_to_move()`: the opposite of the last move, else for a set-up position the majority colour of the teacher's moves, else Black. `wrong_turns()` compares the recorded `turn` with that result: a resumed run drops wrongly recorded entries from an old checkpoint, `orch2.stageB` and `wq.py check` warn about them, and `wq.py fix-setup-turns` redoes only those nodes and writes them back into `a2.json` (backup first, fingerprint kept). One related problem was fixed on the way: the control run without the stones outside the region drops moves outside the region and can end up with the other side to move; its best move is then not comparable with the main run, so the sentence about the surrounding stones is only written when both runs are for the same side. The fake engine now behaves like the real one and answers Black when it is not told, so code that leaves the field out makes the tests fail.
+
+**相关文件。** `pipeline/analyze2.py`（`query`、`side_to_move`、`wrong_turns`、`search_nodes`）、`pipeline/fixturns.py`、`pipeline/wq.py`、`pipeline/orch2.py`，以及 `tests/test_initial_player.py`、`tests/test_fix_setup_turns.py`、`tests/test_setup_turn_readers.py`。已经打包了旧版 `analyze2.py` 的环境（例如事先生成好的云端笔记本）仍会犯同样的错误，需要重新生成；它们带回来的结果可以用 `wq.py fix-setup-turns` 修复。
+
+**Files.** `pipeline/analyze2.py` (`query`, `side_to_move`, `wrong_turns`, `search_nodes`), `pipeline/fixturns.py`, `pipeline/wq.py`, `pipeline/orch2.py`, and `tests/test_initial_player.py`, `tests/test_fix_setup_turns.py`, `tests/test_setup_turn_readers.py`. An environment that has an older `analyze2.py` packed (such as a cloud notebook that was built earlier) still makes the same mistake and has to be rebuilt; the results it brings back can be repaired with `wq.py fix-setup-turns`.
 
 ## 2. 故障模式，按 L x I 排序 / Failure modes, ordered by L x I
 
@@ -97,6 +116,7 @@ Everything here was read only, on copies in a scratch folder or on frames decode
 | `python orch2.py` | 流水线本体（第二次启动会被锁拒绝） / The pipeline (a second start is refused by the lock) |
 | `python regen.py [--dry-run] [--only NAME] [--analyze] [--force]` | 用缓存重新生成 SGF / Rebuild SGFs from the cache |
 | `python wq.py status / check NAME / stamp NAME / validate PATH / fix-check` | 查看和确认，不会启动任何重任务 / Look and bless, never start heavy work |
+| `python wq.py fix-setup-turns [--work DIR] [--dry-run \| --apply]` | 列出（默认）记错行棋方的起手局面；加 `--apply` 才用 KataGo 只重新分析这些节点，原文件先备份 / Lists (the default) the set-up positions recorded for the wrong side; only with `--apply` KataGo redoes just those nodes, the original file is backed up first |
 | `python mkfix.py check / normalize / add a=b / apply file` | 错别字词典维护 / Typo dictionary maintenance |
 | `docker build -t weiqi-pipeline-tests . && docker run --rm weiqi-pipeline-tests` | 全部测试，不需要 GPU、视频和 KataGo / All tests, no GPU, no video, no KataGo |
 
