@@ -93,6 +93,7 @@ const REG={右下:[11,12,18,18],右上:[11,0,18,7],左上:[0,0,5,7],右边:[11,8
 // and it is the same for every collection; the focus crop `view` is computed once per collection in open_(). The choice is remembered per viewer (localStorage, try/catch).
 let store=null;try{store=window.localStorage}catch(e){}
 let viewMode=NC.loadZoom(store,NC.STORE_KEY),ladderMsg='',raf=0,Vnow=FULL;
+Object.defineProperty(window,'Vnow',{get:()=>Vnow}); // `let` bindings are not window properties; mobile.js reads window.Vnow to size its touch tolerance from the cell size of the current crop
 function ctxInfo(b,co){const stones=[];for(let x=0;x<N;x++)for(let y=0;y<N;y++)if(b[x][y]&&!(x<=LOC.x1&&y>=LOC.y0))stones.push([x,y]);
  const hits=[...new Set(co.match(KW)||[])],mention=stones.some(s=>co.includes(gtp(s)));
  return{stones,hits,mention,emph:hits.length>0||(stones.length>0&&mention),regions:hits.filter(h=>REG[h]).map(h=>REG[h])}}
