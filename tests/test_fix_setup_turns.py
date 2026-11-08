@@ -112,6 +112,19 @@ def test_second_run_finds_nothing_to_do(work, capsys):
     assert len(os.listdir(os.path.join(work, fixturns.BACKUP_DIR))) <= 3, "no second backup of an untouched file"
 
 
+def test_backup_is_never_overwritten_and_an_identical_one_is_reused(tmp_path):
+    src = tmp_path / "g_x.a2.json"
+    bk = str(tmp_path / "bk")
+    src.write_text('{"a": 1}', encoding="utf-8")
+    first = fixturns.backup_copy(str(src), bk)
+    assert fixturns.backup_copy(str(src), bk) == first, "same content: reused"
+    src.write_text('{"a": 2}', encoding="utf-8")
+    second = fixturns.backup_copy(str(src), bk)
+    assert second != first and second.endswith(".2")
+    assert open(first, encoding="utf-8").read() == '{"a": 1}', "the first backup stays the original"
+    assert sorted(os.listdir(bk)) == ["g_x.a2.json", "g_x.a2.json.2"]
+
+
 def test_only_asks_the_engine_about_the_wrong_nodes(work, monkeypatch):
     log = os.path.join(work, "reqs.log")
     monkeypatch.setenv("FAKE_REQUEST_LOG", log)

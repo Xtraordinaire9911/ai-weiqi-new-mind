@@ -17,6 +17,7 @@ Run `python regen.py --only "<group>"` afterwards: it rewrites the SGF from the 
 Exit code: 0 nothing wrong or everything repaired, 1 a group or node could not be handled (see the messages), 4 engine
 failed, 5 engine missing.
 """
+import filecmp
 import glob
 import json
 import os
@@ -120,10 +121,13 @@ class LogProgress:
 
 
 def backup_copy(src, backup_dir):
-    """Copy src into backup_dir under its own name; an earlier backup is never overwritten (the first one is the original)."""
+    """Copy src into backup_dir under its own name. An earlier backup is never overwritten (the first one is the original);
+    a backup that is already there with the same content (made by hand before the run) is reused."""
     os.makedirs(backup_dir, exist_ok=True)
     dst, k = os.path.join(backup_dir, os.path.basename(src)), 1
     while os.path.exists(dst):
+        if filecmp.cmp(src, dst, shallow=False):
+            return dst
         k += 1
         dst = os.path.join(backup_dir, '%s.%d' % (os.path.basename(src), k))
     shutil.copy2(src, dst)
