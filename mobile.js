@@ -13,7 +13,7 @@
   const MODE = '(orientation:portrait) and (max-width:1100px),(orientation:landscape) and (max-width:1199px)';
 
   const css = `
-:root{--sat:env(safe-area-inset-top,0px);--sab:env(safe-area-inset-bottom,0px);--sal:env(safe-area-inset-left,0px);--sar:env(safe-area-inset-right,0px);--barh:56px}
+:root{--sat:env(safe-area-inset-top,0px);--sab:env(safe-area-inset-bottom,0px);--sal:env(safe-area-inset-left,0px);--sar:env(safe-area-inset-right,0px);--barh:106px}
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 @supports (height:100dvh){body{height:100dvh}}
 .m-only{display:none}
@@ -21,7 +21,9 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 #mtoast.on{opacity:1}#mtoast button{pointer-events:auto}
 #mtoast.act{pointer-events:auto}
 @media ${MODE}{
-  :root{--bs:min(100vw,calc(100dvh - var(--barh) - var(--sab) - var(--sat) - 220px),64dvh)}
+  /* the bar is two rows tall now (--barh 106px, it was one row of 56px), so the reserve for the text below the board shrinks by the same 50px and the board keeps its old size */
+  :root{--bs:min(100vw,calc(100dvh - var(--barh) - var(--sab) - var(--sat) - 170px),64dvh)}
+  main{scrollbar-gutter:auto}
   html{font-size:100%}
   body{font-size:.9375rem;overflow-x:hidden;padding-left:var(--sal);padding-right:var(--sar);min-width:0}
   .m-only{display:inline-flex}
@@ -43,15 +45,23 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
   section,main,aside{overflow-wrap:anywhere}
   /* the board: no scroll, zoom or text selection while a finger is on it */
   canvas{touch-action:none;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;width:var(--bs);max-width:100%;max-height:none;cursor:default}
-  /* bottom control bar */
+  /* bottom control bar: the desktop buttons as a grid with fixed places, 6 columns by 2 rows. Row 1: home, back 5, back, next, forward 5, end.
+     Row 2: zoom out, zoom in, a gap, variations, AI dots, more. The desktop rows dissolve (display:contents); nothing is added, removed or relabelled when the state changes,
+     conditional buttons are only dimmed. The zoom pair sits in its own row, far from the step buttons, so a quick double tap on next can never hit it. */
   .bar{overflow-x:auto;scrollbar-width:none}
   .bar::-webkit-scrollbar{display:none}
-  .bar{position:fixed;left:0;right:0;bottom:0;z-index:40;margin:0;gap:4px;flex-wrap:nowrap;justify-content:stretch;padding:6px calc(8px + var(--sar)) calc(6px + var(--sab)) calc(8px + var(--sal));background:var(--pn);border-top:1px solid var(--bd);box-shadow:0 -2px 8px rgba(0,0,0,.08)}
-  .bar>button{flex:1 1 0;min-width:44px;min-height:44px;padding:4px 2px;font-size:.8rem;display:inline-flex;align-items:center;justify-content:center;text-align:center;white-space:normal;line-height:1.15;overflow:hidden}
-  .bar>button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
+  .bar{position:fixed;left:0;right:0;bottom:0;z-index:40;margin:0;display:grid;grid-template-columns:repeat(6,minmax(44px,1fr));grid-auto-rows:44px;align-content:start;align-items:stretch;justify-content:stretch;gap:4px;padding:6px max(calc(8px + var(--sar)),calc((100% - 600px) / 2)) calc(6px + var(--sab)) max(calc(8px + var(--sal)),calc((100% - 600px) / 2));background:var(--pn);border-top:1px solid var(--bd);box-shadow:0 -2px 8px rgba(0,0,0,.08)}
+  .br{display:contents}
+  .bar .sep,#zl{display:none}
+  .bar button,.bar button.i,.bar button.s,.bar button.m{width:auto;height:auto;min-width:44px;min-height:44px;padding:4px 2px;font-size:.8rem;display:inline-flex;align-items:center;justify-content:center;text-align:center;white-space:normal;line-height:1.15;overflow:hidden}
+  .bar button.i{font-size:1.15rem}
+  #bzo{grid-column:1}#bzi{grid-column:2}#mvbtn{grid-column:4}#ba{grid-column:5}#mmbtn{grid-column:6}
+  .bar button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
+  #hintb{min-height:32px;height:32px}
   #mmore{position:fixed;left:0;right:0;bottom:calc(var(--barh) + var(--sab));z-index:39;display:none;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:6px;padding:10px calc(10px + var(--sar)) 10px calc(10px + var(--sal));background:var(--pn);border-top:1px solid var(--bd);box-shadow:0 -4px 14px rgba(0,0,0,.18);max-height:50dvh;overflow:auto}
   body.mmore #mmore{display:grid}
   #mmore button{display:flex!important;align-items:center;justify-content:center;min-height:48px}
+  #mmore button:disabled{opacity:.4} /* the ladder demo stays in its place, dimmed, when the commentary has no ladder */
   /* collection list and the compute card: a drawer */
   aside{position:fixed;z-index:50;background:var(--pn);max-height:none;visibility:hidden;transition:transform .2s,visibility 0s .2s;padding-top:calc(10px + var(--sat));padding-bottom:calc(10px + var(--sab))}
   body.mdraw aside{visibility:visible;transform:none;transition:transform .2s}
@@ -71,7 +81,9 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
   main>*{flex:none}
   canvas{position:sticky;top:var(--sat);z-index:20;align-self:center;box-shadow:0 0 0 100vmax var(--bg);clip-path:inset(-1px -100vmax -1px -100vmax)}
   #info,#path,#cap{margin-left:8px;margin-right:8px}
-  #cap{max-width:none!important}
+  #cap{max-width:none!important;height:auto;visibility:visible} /* below the sticky board nothing above it can move, so the strip need not reserve its height here */
+  #cap:not(.on){display:none}
+  #capt{overflow-y:visible}
   #qzt,#qzb{max-width:none!important;padding:0 10px}
   body.qz #qzt:not(:empty){margin-top:8px}
   section{flex:1 0 auto;overflow:visible;max-height:none;border-left-width:0;border-top-width:1px;padding:10px 12px}
@@ -88,7 +100,8 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
   #info,#path,#cap{display:none}
   section{padding-bottom:calc(var(--barh) + 12px);max-height:none}
   footer{grid-column:1/-1;height:var(--ft);overflow:auto;padding-bottom:var(--sab)}
-  .bar{left:calc(var(--bs) + var(--sal));bottom:calc(var(--ft) + var(--sab) - 0px);padding-left:8px}
+  /* the bar is only the right column here (296 px on a 1024x768 tablet): the percentage padding of the portrait rule would refer to the whole window, so both sides are set, and the gap is tight enough for six 44px columns */
+  .bar{left:calc(var(--bs) + var(--sal));bottom:calc(var(--ft) + var(--sab) - 0px);gap:3px;padding-left:6px;padding-right:calc(6px + var(--sar))}
   #mmore{left:calc(var(--bs) + var(--sal));bottom:calc(var(--barh) + var(--ft) + var(--sab))}
   aside{top:0;bottom:0;left:0;width:min(380px,92vw);border-right:1px solid var(--bd);transform:translateX(-105%);box-shadow:6px 0 20px rgba(0,0,0,.25)}
   body.qzh{grid-template-columns:minmax(0,1fr) minmax(0,300px)}
@@ -106,7 +119,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 
   // ---------------------------------------------------------------- DOM work (after the page exists)
   const $ = id => document.getElementById(id);
-  let mq, built = false, orig = [];
+  let mq, built = false;
 
   function toast(msg, ms) {
     let t = $('mtoast');
@@ -122,12 +135,15 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
     return b;
   }
 
-  // Phone bar: previous, next, variations, view mode, AI dots, more. Everything else moves into the "more" sheet.
+  // Phone bar (a 6 by 2 grid, see the css): steps and zoom stay where the desktop has them, "variations" and "more" are added to the second row.
+  // Every other button (move numbers, ladder demo, copy SGF, training, the engine panel's button) moves into the "more" sheet.
+  const BAR_KEEP = ['b0', 'br5', 'b1', 'b2', 'bf5', 'b3', 'bzo', 'zl', 'bzi', 'mvbtn', 'ba', 'mmbtn'];
+  const TOOLS_ROW = ['bn', 'ba', 'bl', 'bk', 'bq', 'bep']; // order of the desktop tools row, used to put the buttons back
+  let late = null;
   function build() {
     const bar = document.querySelector('.bar');
     if (!bar || built) return;
     built = true;
-    orig = Array.from(bar.children);
     const more = document.createElement('div'); more.id = 'mmore';
     const scrim = document.createElement('div'); scrim.id = 'mscrim';
     const bv = mkBtn('mvbtn', '变化', '跳到变化列表'), bm = mkBtn('mmbtn', '更多'), bd = mkBtn('mdbtn', '目录'), bc = mkBtn('mcbtn', '算力');
@@ -136,14 +152,13 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
     bd.onclick = () => openDrawer(false);
     bc.onclick = () => openDrawer(true);
     scrim.onclick = closeAll;
-    const keep = ['b1', 'b2', 'mvbtn', 'bf', 'ba', 'mmbtn'];
-    const parts = { b1: $('b1'), b2: $('b2'), mvbtn: bv, bf: $('bf'), ba: $('ba'), mmbtn: bm };
-    bar.textContent = '';
-    keep.forEach(k => bar.appendChild(parts[k]));
-    ['b0', 'b3', 'bn', 'bl', 'bk', 'bq'].forEach(k => { const e = $(k) || orig.find(o => o.id === k); if (e) more.appendChild(e); });
+    Array.from(bar.querySelectorAll('button')).forEach(b => { if (!BAR_KEEP.includes(b.id)) more.appendChild(b); });
+    const row2 = $('brt') || bar;
+    row2.insertBefore(bv, $('ba') && $('ba').parentNode === row2 ? $('ba') : null); row2.appendChild(bm);
     more.appendChild(bd); more.appendChild(bc);
-    // buttons added later by other modules (the engine panel adds one) go into the sheet
-    new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(n => { if (n.nodeType === 1 && n.parentNode === bar && !keep.includes(n.id)) { orig.push(n); more.appendChild(n); } }))).observe(bar, { childList: true });
+    // buttons added later by other modules go into the sheet
+    late = new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(n => { if (n.nodeType === 1 && n.tagName === 'BUTTON' && !BAR_KEEP.includes(n.id) && bar.contains(n)) more.appendChild(n); })));
+    late.observe(bar, { childList: true, subtree: true });
     document.body.appendChild(more); document.body.appendChild(scrim);
     more.addEventListener('click', e => { if (e.target.closest('button') && !/^m(d|c)btn$/.test(e.target.closest('button').id)) document.body.classList.remove('mmore'); });
     // drawer header with a close button
@@ -152,17 +167,20 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
     // choosing a collection closes the drawer
     const list = $('list'); if (list) list.addEventListener('click', e => { if (e.target.closest('div')) setTimeout(closeAll, 0); });
     bar.setAttribute('role', 'toolbar'); bar.setAttribute('aria-label', '棋谱控制');
-    markState();
   }
   function unbuild() {
     const bar = document.querySelector('.bar');
     if (!bar || !built) return;
     built = false; closeAll();
+    if (late) { late.disconnect(); late = null; }
+    // the tools go back into the desktop row first (while they can still be found), in their original order; unknown late buttons follow
+    const row2 = $('brt') || bar, sheet = $('mmore');
+    const extra = sheet ? Array.from(sheet.querySelectorAll('button')).filter(b => !/^m(d|c)btn$/.test(b.id) && !TOOLS_ROW.includes(b.id)) : [];
+    TOOLS_ROW.forEach(id => { const e = $(id); if (e) row2.appendChild(e); });
+    extra.forEach(e => row2.appendChild(e));
     ['mmore', 'mscrim', 'mvbtn', 'mmbtn', 'mdbtn', 'mcbtn', 'mdx'].forEach(i => { const e = $(i); if (e) e.remove(); });
-    orig.filter(e => e.id && !e.classList.contains('m-only')).forEach(e => bar.appendChild(e));
     bar.removeAttribute('role');
   }
-  function markState() { const b = $('ba'); const bf = $('bf'); void b; void bf; }
 
   function openDrawer(toCompute) {
     engineNote();

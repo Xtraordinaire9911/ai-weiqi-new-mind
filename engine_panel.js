@@ -278,7 +278,7 @@
       var t = e.target;
       if (t.id === 'epm') H.RC.setMode(t.value);
       else if (t.id === 'epcap') { S.cap = t.value === 'max' ? 'max' : Number(t.value); save(); render(); }
-      else if (t.id === 'epre') { S.region = t.checked; save(); if (!S.region) note = '不限区域时候选点可能在当前视野之外,可点「视角:全盘」查看'; render(); }
+      else if (t.id === 'epre') { S.region = t.checked; save(); if (!S.region) note = '不限区域时候选点可能在当前视野之外,可点棋盘下方的「－」缩小视野查看'; render(); }
       else if (t.id === 'epbl') { S.best = t.checked; save(); if (!S.best && myGhost && H.getGhost() === myGhost) { H.setGhost([]); myGhost = null; H.draw(); } else if (S.best && curLive()) { autoGhost(H.cur()); H.draw(); } render(); }
       else if (t.id === 'epmo') switchModel(t.value);
     });
@@ -288,7 +288,8 @@
     tb.addEventListener('mouseleave', function () { if (hov) { hov = null; H.clearHover(); } });
     $('epnet').addEventListener('toggle', function () { if ($('epnet').open) $('epnl').innerHTML = netRows(); });
     var bar = document.querySelector('.bar');
-    if (bar) { var bt = document.createElement('button'); bt.id = 'bep'; bt.textContent = '推演'; bt.title = '用 KataGo 继续推演这个局面(终点会自动显示)'; bt.onclick = function () { S.open = !S.open; save(); render(); }; bar.appendChild(bt); }
+    // the button joins the tools row of the control bar (fixed width class "s", same as the other two character buttons) so the bar keeps its geometry; without that row it goes to the end of the bar as before
+    if (bar) { var bt = document.createElement('button'); bt.id = 'bep'; bt.className = 's'; bt.textContent = '推演'; bt.title = '用 KataGo 继续推演这个局面(终点会自动显示)'; bt.onclick = function () { S.open = !S.open; save(); render(); }; (document.getElementById('brt') || bar).appendChild(bt); }
   }
   // 走: play the candidate as a trial node (the viewer's RC.click: region check, suicide check, not added to the tree) and, if a search was active, continue there after a short pause
   function playMove(mv) {

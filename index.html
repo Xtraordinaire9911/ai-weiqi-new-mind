@@ -12,7 +12,26 @@ aside,main,section{overflow:auto;padding:10px;min-width:0}aside,section{backgrou
 input,select,button{font:inherit;color:inherit;background:var(--pn);border:1px solid var(--bd);border-radius:5px;padding:4px 8px}button{cursor:pointer}button:hover,.on{border-color:var(--ac);color:var(--ac)}
 #list div{padding:4px 6px;cursor:pointer;border-radius:4px}#list div:hover,#list .on{background:var(--bg);color:var(--ac)}#list h4{margin:10px 0 2px;font-size:12px;opacity:.7}
 canvas{width:100%;max-width:min(80vh,100%);aspect-ratio:1;display:block;margin:auto;cursor:pointer}
-.bar{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0;justify-content:center}
+/* Control bar with a fixed geometry: two rows, every button has a fixed width per class (.i icon, .s two characters, .m up to five), conditional buttons stay in place and are only
+   dimmed (disabled, never display:none), labels never change, and the zoom group is set apart from the navigation by a gap and a rule. The column keeps its width when the page
+   grows a scrollbar (scrollbar-gutter), so nothing moves when the node, the zoom or the collection changes. The phone layout (mobile.js) lays the same buttons out as a grid. */
+main{scrollbar-gutter:stable}
+.bar{display:flex;flex-direction:column;align-items:center;gap:6px;margin:8px 0}
+.br{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:6px}
+.bar button{flex:none;width:60px;height:34px;padding:0 4px;display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;overflow:hidden;font-size:14px}
+.bar button.i{width:44px;font-size:16px}.bar button.z{font-size:22px;line-height:1}.bar button.m{width:84px}
+.bar button:disabled{opacity:.4;cursor:default}.bar button:disabled:hover{border-color:var(--bd);color:inherit}
+.bar .sep{flex:none;width:1px;height:22px;background:var(--bd);margin:0 10px}
+#zl{flex:none;width:52px;text-align:center;font-size:12px;color:var(--mu);white-space:nowrap}
+/* caption strip: reserved space (fixed height, scrolls inside) so its content never moves anything; the hint line holds what the commentary points at outside the view and the user's switch to the full board */
+#cap{box-sizing:border-box;height:72px;margin:4px auto;max-width:min(80vh,100%);border-radius:12px;background:rgba(255,140,0,.15);border:1px solid #e67e22;color:var(--ac);font-size:13px;display:flex;flex-direction:column;visibility:hidden}
+#cap.on{visibility:visible}
+#hint{display:none;flex:none;height:28px;align-items:center;gap:8px;padding:0 6px 0 12px}#hint.on{display:flex}
+#hintt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#hintb{flex:none;width:84px;height:22px;padding:0;font-size:12px;visibility:hidden}#hintb.on{visibility:visible}
+#capt{flex:1;min-height:0;overflow-y:auto;padding:2px 12px 4px;text-align:center;line-height:1.5}
+#info{min-height:1.5em}
+#path{height:56px;overflow-y:auto;align-content:flex-start} /* reserved too, deep lines scroll inside it: if the page itself can scroll, its length stays the same for every node */
 #path{display:flex;flex-wrap:wrap;gap:3px;margin:6px 0;font-size:12px}#path span{padding:1px 6px;border-radius:10px;border:1px solid var(--bd);cursor:pointer}#path .cur{background:var(--ac);color:#fff;border-color:var(--ac)}
 .card{border:1px solid var(--bd);border-left:4px solid var(--ac);border-radius:6px;padding:8px 10px;margin:8px 0;line-height:1.65;white-space:pre-wrap}
 .card h5{margin:0 0 4px;font-size:12px;color:var(--ac)}.card.ai{border-left-color:var(--gd)}.card.ai h5{color:var(--gd)}.card.kp{border-left-color:#d35400;background:rgba(211,84,0,.07)}.card.kp h5{color:#d35400}.card.ctx{border-left-color:#8e44ad}.card.ctx h5{color:#8e44ad}
@@ -31,12 +50,13 @@ footer{grid-column:1/-1;padding:3px 10px;border-top:1px solid var(--bd);backgrou
 <aside><select id="src"></select> <input id="q" placeholder="搜索 夹/挂/三三…" style="width:100%;margin:6px 0"><div id="ver" style="font-size:11px;color:var(--mu);margin:2px 0"></div><div id="prog" style="background:#fff3cd;color:#664d03;border:1px solid #e0b84a;border-radius:5px;padding:6px 8px;margin:6px 0;font-size:13px;display:none"></div><div id="list"></div>
 <details id="rc"><summary><i id="rcd"></i>算力 · <span id="rcs">缓存</span></summary><div class="rcb"><select id="rcm" title="缓存=使用已生成的 AI 数据(默认,不联网)"><option value="off">缓存(默认,不联网)</option><option value="local">本机引擎</option><option value="remote">远程 GPU</option></select><input id="rce" type="text" placeholder="桥接地址 http://127.0.0.1:8787" autocomplete="off" spellcheck="false"><input id="rct" type="password" placeholder="token(只存在本浏览器)" autocomplete="off"><div class="rcr"><button id="rcc">测试连接</button><button id="rca">分析当前局面</button></div><label><input type="checkbox" id="rcu"> 无缓存时自动分析</label><div id="rcn"></div></div></details></aside>
 <main><canvas id="cv" width="800" height="800"></canvas>
-<div class="bar"><button id="b0">⏮</button><button id="b1">◀</button><button id="b2">▶</button><button id="b3">⏭</button><button id="bn">手数</button><button id="bf">视角:自动</button><button id="bl" style="display:none">演示征子</button><button id="ba">AI局部点</button><button id="bk">复制SGF</button><button id="bq" title="按定式出题,用记忆曲线复习">训练</button></div>
-<div id="cap" style="display:none;margin:4px auto;max-width:min(80vh,100%);padding:3px 10px;border-radius:12px;background:rgba(255,140,0,.15);border:1px solid #e67e22;color:var(--ac);font-size:13px;text-align:center"></div><div id="info"></div><div id="path"></div></main>
+<div class="bar" id="bar"><div class="br" id="brn"><button id="b0" class="i" title="回到开头 (Home)">⏮︎</button><button id="br5" class="i" title="后退5手 (PageUp / Shift+←)">⏪︎</button><button id="b1" class="i" title="上一手 (←)">◀</button><button id="b2" class="i" title="下一手 (→)">▶</button><button id="bf5" class="i" title="前进5手,沿右侧列表选中的变化走 (PageDown / Shift+→)">⏩︎</button><button id="b3" class="i" title="到终点 (End)">⏭︎</button><i class="sep" aria-hidden="true"></i><button id="bzo" class="i z" title="缩小:显示更多棋盘">−</button><span id="zl" aria-live="polite"></span><button id="bzi" class="i z" title="放大:靠近定式">+</button></div>
+<div class="br" id="brt"><button id="bn" class="s">手数</button><button id="ba" class="m">AI局部点</button><button id="bl" class="m" disabled>演示征子</button><button id="bk" class="m">复制SGF</button><button id="bq" class="s" title="按定式出题,用记忆曲线复习">训练</button></div></div>
+<div id="cap"><div id="hint"><span id="hintt"></span><button id="hintb" type="button" title="显示整个棋盘">显示全盘</button></div><div id="capt"></div></div><div id="info"></div><div id="path"></div></main>
 <section><h3 id="ti" style="margin-top:0"></h3><div id="vd"></div><h4>变化(↑↓选,→进入)</h4><div id="vars"></div><div id="cm"></div></section>
 <!-- Credit line: the licenses make credit a condition of reuse, so it stays visible on every page. Keep it when you copy or adapt this viewer. -->
 <footer id="cr"><a href="https://github.com/Xtraordinaire9911/ai-weiqi-new-mind" target="_blank" rel="noopener noreferrer">ai-weiqi-new-mind</a> · 代码 <a href="https://polyformproject.org/licenses/noncommercial/1.0.0" target="_blank" rel="noopener noreferrer">PolyForm Noncommercial 1.0.0</a> · 数据与文档 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noopener noreferrer">CC BY-NC-SA 4.0</a> · 讲解文字版权归陈林涛 · <a href="https://github.com/Xtraordinaire9911/ai-weiqi-new-mind/blob/main/NOTICE.md" target="_blank" rel="noopener noreferrer">署名与许可说明</a></footer>
-<script src="data/library.js"></script>
+<script src="data/library.js"></script><script src="nav_core.js"></script>
 <script src="engine_core.js"></script><script src="engine_net.js"></script><script src="engine_panel.js"></script><script src="pwa.js"></script>
 <script>
 // ---- SGF 解析: 节点 {p:{PROP:[vals]},c:[children],up} ----
@@ -66,10 +86,13 @@ function bbox(root){const xs=[],ys=[];(function w(n){for(const k of['AB','AW','B
  if(x0===0)x1=Math.min(18,w);else if(x1===18)x0=Math.max(0,18-w);else x1=Math.min(18,x0+w);if(y1===18)y0=Math.max(0,18-w);else if(y0===0)y1=Math.min(18,w);else y1=Math.min(18,y0+w);return{x0,y0,x1,y1}}
 // ---- 绘制 ----
 // ---- 周边/全盘上下文 ----
-const LOC={x1:10,y0:8}, FULL={x0:0,y0:0,x1:18,y1:18}, VM=['自动','聚焦','全盘'];
+const LOC={x1:10,y0:8}, FULL=NC.FULL;
 const KW=/征子|厚势|外势|厚|接应|配合|对角|有子|一路|二路|三路|上方|下方|左边|右边|右下|右上|左上|劫材/g;
 const REG={右下:[11,12,18,18],右上:[11,0,18,7],左上:[0,0,5,7],右边:[11,8,18,18],上方:[0,0,10,7],下方:[0,14,10,18],左边:[0,0,2,18]};
-let viewMode=0,ladderMsg='',raf=0,Vnow=FULL;
+// Zoom (which part of the board is drawn) is chosen by the user only. viewMode is one of NC.ZOOM (focus / middle / full, see nav_core.js), it never changes when the node changes
+// and it is the same for every collection; the focus crop `view` is computed once per collection in open_(). The choice is remembered per viewer (localStorage, try/catch).
+let store=null;try{store=window.localStorage}catch(e){}
+let viewMode=NC.loadZoom(store,NC.STORE_KEY),ladderMsg='',raf=0,Vnow=FULL;
 function ctxInfo(b,co){const stones=[];for(let x=0;x<N;x++)for(let y=0;y<N;y++)if(b[x][y]&&!(x<=LOC.x1&&y>=LOC.y0))stones.push([x,y]);
  const hits=[...new Set(co.match(KW)||[])],mention=stones.some(s=>co.includes(gtp(s)));
  return{stones,hits,mention,emph:hits.length>0||(stones.length>0&&mention),regions:hits.filter(h=>REG[h]).map(h=>REG[h])}}
@@ -139,11 +162,14 @@ function drawBV(bv,V,X,Y,m,disc){
  vk.forEach(k=>{const x=X(k.q[0]),y=Y(k.q[1]);g.save();g.setLineDash([1.5,5]);g.lineCap='round';g.strokeStyle=c2;g.lineWidth=2.6;g.beginPath();g.arc(x,y,m*.42,0,7);g.stroke();g.restore()});
  vk.forEach(k=>pill(X(k.q[0])+m*.3,Y(k.q[1])-m*.42,lvLabel([i0,k.ci]),c2,Math.max(m*.36,14)))}
 let lastPulse=0;function pulse(t){if(t-lastPulse<32){raf=requestAnimationFrame(pulse);return}lastPulse=t;drawBoard()} // halo pulse throttled to ~30fps; not scheduled during hover preview or when the page is hidden (see the end of drawBoard)
-function drawBoard(){cancelAnimationFrame(raf);raf=0;const rp=rpOf(cur),{b,num,last,k}=rp,co=(cur.p.C||[''])[0],cx=rp.cx||(rp.cx=ctxInfo(b,co)),full=viewMode===2||(viewMode===0&&cx.emph),emph=full&&cx.emph,
- V=full?FULL:view;Vnow=V;const S=cv.width,span=Math.max(V.x1-V.x0,V.y1-V.y0),m=S/(span+1.6),ox=m*.8,oy=m*.8;
+function drawBoard(){cancelAnimationFrame(raf);raf=0;const rp=rpOf(cur),{b,num,last,k}=rp,co=(cur.p.C||[''])[0],cx=rp.cx||(rp.cx=ctxInfo(b,co)),
+ V=NC.zoomRect(viewMode,view);Vnow=V; // the visible region depends on the user's zoom only, never on the node or its commentary
+ // Context marks (dashed regions, halos, dimmed corner stones) are drawn only for outer stones that lie inside the current view; the ones outside it are named in the hint line instead (see below)
+ const vis=cx.emph?cx.stones.filter(q=>inVw(q,V)):[],emph=vis.length>0;
+ const S=cv.width,span=Math.max(V.x1-V.x0,V.y1-V.y0),m=S/(span+1.6),ox=m*.8,oy=m*.8;
  const X=c=>ox+(c-V.x0)*m,Y=r=>oy+(r-V.y0)*m;
  g.fillStyle='#e3b866';g.fillRect(0,0,S,S);g.strokeStyle='#333';
- if(emph)cx.regions.forEach(([a,c,d,e])=>{g.fillStyle='rgba(255,140,0,.18)';g.fillRect(X(a)-m/2,Y(c)-m/2,(d-a+1)*m,(e-c+1)*m);g.save();g.setLineDash([8,6]);g.strokeStyle='rgba(230,110,0,.8)';g.lineWidth=2;g.strokeRect(X(a)-m/2,Y(c)-m/2,(d-a+1)*m,(e-c+1)*m);g.restore()});
+ if(emph)cx.regions.map(r=>NC.clipRect(r,V)).filter(Boolean).forEach(([a,c,d,e])=>{g.fillStyle='rgba(255,140,0,.18)';g.fillRect(X(a)-m/2,Y(c)-m/2,(d-a+1)*m,(e-c+1)*m);g.save();g.setLineDash([8,6]);g.strokeStyle='rgba(230,110,0,.8)';g.lineWidth=2;g.strokeRect(X(a)-m/2,Y(c)-m/2,(d-a+1)*m,(e-c+1)*m);g.restore()});
  g.strokeStyle='#333';
  for(let c=V.x0;c<=V.x1;c++){g.lineWidth=(c===0||c===18)?2.5:1;g.beginPath();g.moveTo(X(c),Y(V.y0)-(V.y0>0?m*.5:0));g.lineTo(X(c),Y(V.y1)+(V.y1<18?m*.5:0));g.stroke()}
  for(let r=V.y0;r<=V.y1;r++){g.lineWidth=(r===0||r===18)?2.5:1;g.beginPath();g.moveTo(X(V.x0)-(V.x0>0?m*.5:0),Y(r));g.lineTo(X(V.x1)+(V.x1<18?m*.5:0),Y(r));g.stroke()}
@@ -169,13 +195,22 @@ function drawBoard(){cancelAnimationFrame(raf);raf=0;const rp=rpOf(cur),{b,num,l
  if(bv)drawBV(bv,V,X,Y,m,disc); // preview of the hovered teacher branch (below hot)
  hot.forEach(([c,r])=>{g.strokeStyle='#e67e22';g.lineWidth=3;g.beginPath();g.arc(X(c),Y(r),m*.52,0,7);g.stroke()});
  // 周边外势光环
- if(emph&&cx.stones.length){const p=.5+.5*Math.sin(Date.now()/280);cx.stones.forEach(([c,r])=>{g.fillStyle=`rgba(255,140,0,${.12+.12*p})`;g.beginPath();g.arc(X(c),Y(r),m*(.62+.08*p),0,7);g.fill();g.strokeStyle=`rgba(255,120,0,${.6+.4*p})`;g.lineWidth=3+2*p;g.beginPath();g.arc(X(c),Y(r),m*(.55+.08*p),0,7);g.stroke()});if(!bv&&!hoverG.length&&!document.hidden)raf=requestAnimationFrame(pulse)}
+ if(emph){const p=.5+.5*Math.sin(Date.now()/280);vis.forEach(([c,r])=>{g.fillStyle=`rgba(255,140,0,${.12+.12*p})`;g.beginPath();g.arc(X(c),Y(r),m*(.62+.08*p),0,7);g.fill();g.strokeStyle=`rgba(255,120,0,${.6+.4*p})`;g.lineWidth=3+2*p;g.beginPath();g.arc(X(c),Y(r),m*(.55+.08*p),0,7);g.stroke()});if(!bv&&!hoverG.length&&!document.hidden)raf=requestAnimationFrame(pulse)}
  if(window.QZ&&QZ.on)QZ.over({X,Y,m,V,nc}); // training view (quiz.js) draws its marks on top of the board
  // 说明条 / 按钮
- const cap=$('cap'),parts=[];if(emph)parts.push('周边: '+(cx.hits.length?cx.hits.join(' / '):'外围有子')+(cx.stones.length?` · 外围子${cx.stones.length}`:''));if(ladderMsg)parts.push(ladderMsg);if(window.RC&&RC.live(cur))parts.push(RC.cap(cur));if(candPts.length)parts.push('半透明棋子=AI候选(颜色=该方行棋) · 圈色/数字=比局部最优差几目(绿≥-0.3) · 蓝虚线圈+序号=老师在视频里走的变化(对应右侧列表) · 悬停看AI变化(只显示该线),点击固定 · 悬停蓝圈=预览老师该分支的后续(序号从1起, 紫色 n-a 圈=进入后才出现的下一层)');
- cap.textContent=parts.join('  ┃  ');cap.style.display=parts.length?'block':'none';$('bl').style.display=cx.hits.includes('征子')?'':'none';
- $('bf').textContent='视角:'+VM[viewMode];
+ // Hint line: what the commentary points at (outer stones, ladder demo moves, clicked coordinates) that is outside the current view. It only reports; showing the full board is the user's choice (button in the strip, or the zoom buttons).
+ const hid=NC.outside([...(cx.emph?cx.stones:[]),...(ghost.length&&ghost!==pinAI?ghost:[]),...hot],V),regOut=cx.emph?cx.hits.filter(h=>REG[h]&&!NC.clipRect(REG[h],V)):[]; // regOut: named areas ("右上") that lie wholly outside the view
+ const hint=[cx.emph?'周边: '+(cx.hits.length?cx.hits.join(' / '):'外围有子')+(cx.stones.length?` · 外围子${cx.stones.length}`:''):'',hid.length?'视野外: '+NC.listPts(hid,gtp,5):'',regOut.length?'视野外区域: '+regOut.join(' '):''].filter(Boolean).join(' · ');
+ const parts=[];if(ladderMsg)parts.push(ladderMsg);if(window.RC&&RC.live(cur))parts.push(RC.cap(cur));if(candPts.length)parts.push('半透明棋子=AI候选(颜色=该方行棋) · 圈色/数字=比局部最优差几目(绿≥-0.3) · 蓝虚线圈+序号=老师在视频里走的变化(对应右侧列表) · 悬停看AI变化(只显示该线),点击固定 · 悬停蓝圈=预览老师该分支的后续(序号从1起, 紫色 n-a 圈=进入后才出现的下一层)');
+ // set text only when it changed: the halo animation redraws this ~30 times a second and must not reset the scroll position of the strip
+ const ht=$('hintt'),cp=$('capt'),capTxt=parts.join('  ┃  ');if(ht.textContent!==hint){ht.textContent=hint;ht.title=hint}if(cp.textContent!==capTxt)cp.textContent=capTxt;
+ $('hint').classList.toggle('on',!!hint);$('hintb').classList.toggle('on',hid.length>0||regOut.length>0);$('cap').classList.toggle('on',!!hint||parts.length>0);
+ const bl=$('bl'),lad=cx.hits.includes('征子');if(bl){bl.disabled=!lad;bl.title=lad?'演示征子:找出被征的子,一手一手演示追赶':'当前讲解没有提到征子时不可用'} // conditional button keeps its place: dimmed, never display:none
+ zoomUI();
  return k}
+// zoom buttons: the label and the end stops follow the zoom state (null-safe: the phone layout moves some buttons into the more sheet)
+function zoomUI(){const l=$('zl'),o=$('bzo'),i=$('bzi'),t=NC.ZOOM_NAME[viewMode]||NC.ZOOM_NAME[NC.ZOOM.FOCUS];if(l&&l.textContent!==t)l.textContent=t;if(o)o.disabled=!NC.canStep(viewMode,NC.OUT,view);if(i)i.disabled=!NC.canStep(viewMode,NC.IN,view)}
+function setZoom(m){if(m===viewMode)return;viewMode=m;NC.saveZoom(store,NC.STORE_KEY,m);tip.style.display='none';drawBoard()}
 function panel(k){const co=(cur.p.C||[''])[0],box=$('cm');box.innerHTML='';
  const secs=co.split(/\n(?=【)/).filter(s=>s.trim());
  secs.forEach(s=>{const mt=/^【([^】]+)】/.exec(s),h=mt?mt[1].replace(/\s*@\S+/,''):'',cls=h.includes('要点')?'kp':h.includes('周边')?'ctx':h.includes('AI')?'ai':'';let body=((mt&&/@\S+/.test(mt[1])?'@'+/@(\S+)/.exec(mt[1])[1]+' ':'')+(mt?s.slice(mt[0].length):s)).trim();
@@ -187,7 +222,7 @@ function panel(k){const co=(cur.p.C||[''])[0],box=$('cm');box.innerHTML='';
   const kp=((c.p.C||[''])[0].match(/【要点与考量】([^\n]*)/)||[])[1]||'',al=an?+an.split(':')[1]:null;
   bt.textContent=`${i+1}. ${c.p.B?'●':'○'} ${q&&q[0]<N?gtp(q):'脱先/他处'}${al===null?'':al>-0.05?'  AI最优':'  AI '+al.toFixed(1)+'目'}${kp?'  '+kp.slice(0,22):''}`;bt.onclick=()=>go(c);if(i==sel)bt.classList.add('on');vs.appendChild(bt)});
  // 手顺
- const ns=[];for(let n=cur;n;n=n.up)ns.unshift(n);$('path').innerHTML='';ns.forEach((n,i)=>{const mv=n.p.B||n.p.W;if(!mv)return;const s=document.createElement('span'),q=pt(mv[0]);s.textContent=`${i}.${n.p.B?'●':'○'}${gtp(q)}`;if(n===cur)s.className='cur';s.onclick=()=>go(n);$('path').appendChild(s)});
+ const ns=[];for(let n=cur;n;n=n.up)ns.unshift(n);$('path').innerHTML='';ns.forEach((n,i)=>{const mv=n.p.B||n.p.W;if(!mv)return;const s=document.createElement('span'),q=pt(mv[0]);s.textContent=`${i}.${n.p.B?'●':'○'}${gtp(q)}`;if(n===cur)s.className='cur';s.onclick=()=>go(n);$('path').appendChild(s)});$('path').scrollTop=$('path').scrollHeight; // keep the current move (the last chip) in view
  $('info').textContent=`第${k}手 · ${cur.c.length?cur.c.length+'个后续':'终点'}`}
 function go(n){cur=n;sel=0;hot=[];ghost=[];hoverG=[];tipFor=null;ladderMsg='';draw();window.RC&&RC.onGo();window.EnginePanel&&EnginePanel.onGo()} // let the compute switch auto-analyze the new node; the engine panel cancels a running search
 // ---- 交互 ----
@@ -266,9 +301,15 @@ function withCredit(sgf){
    i=j+1;last=i}}
  const add=[['AP','ai-weiqi-new-mind:'+VIEWER_VER],['CP',CREDIT_CP],['SO',REPO_URL]].filter(([k])=>!have.has(k)).map(([k,v])=>k+'['+sgfEsc(v)+']').join('');
  return add?sgf.slice(0,last)+add+sgf.slice(last):sgf}
-const nav={b0:()=>go(tree),b1:()=>cur.up&&go(cur.up),b2:()=>cur.c[sel]&&go(cur.c[sel]),b3:()=>{let n=cur;while(n.c[0])n=n.c[0];go(n)}};
-for(const k in nav)$(k).onclick=nav[k];$('bn').onclick=()=>{showN=!showN;draw()};$('bf').onclick=()=>{viewMode=(viewMode+1)%3;draw()};$('bl').onclick=ladderDemo;$('ba').onclick=()=>{showAI=!showAI;draw()};$('bk').onclick=()=>navigator.clipboard.writeText(withCredit(col.sgf));
-onkeydown=e=>{if(e.target.tagName==='INPUT')return;const k=e.key;if(k==='ArrowLeft')nav.b1();else if(k==='ArrowRight')nav.b2();else if(k==='ArrowUp'){sel=Math.max(0,sel-1);panel()}else if(k==='ArrowDown'){sel=Math.min(cur.c.length-1,sel+1);panel()}else if(k==='Home')nav.b0();else if(k==='End')nav.b3()};
+// Fast steps (NC.FAST = 5 moves, reasons in nav_core.js): forward follows the variation selected in the list and stops at a leaf, back walks up the parents and stops at the root `tree`.
+// go() clears the previews (hot, ghost, hover, ladder text); the tooltip is hidden here too so none is left floating over the new position. The zoom is not touched.
+function jump(dir){const r=dir>0?NC.stepForward(cur,sel,NC.FAST):NC.stepBack(cur,NC.FAST,tree);if(r.node!==cur){tip.style.display='none';go(r.node)}}
+const nav={b0:()=>go(tree),b1:()=>cur.up&&go(cur.up),b2:()=>cur.c[sel]&&go(cur.c[sel]),b3:()=>{let n=cur;while(n.c[0])n=n.c[0];go(n)},br5:()=>jump(-1),bf5:()=>jump(1)};
+for(const k in nav)$(k).onclick=nav[k];$('bn').onclick=()=>{showN=!showN;draw()};$('bzo').onclick=()=>setZoom(NC.stepZoom(viewMode,NC.OUT,view));$('bzi').onclick=()=>setZoom(NC.stepZoom(viewMode,NC.IN,view));$('hintb').onclick=()=>setZoom(NC.ZOOM.FULL);$('bl').onclick=ladderDemo;$('ba').onclick=()=>{showAI=!showAI;draw()};$('bk').onclick=()=>navigator.clipboard.writeText(withCredit(col.sgf));
+// Keys: arrows, Home, End and Up/Down for the variation list as before; PageUp / PageDown and Shift+Left / Shift+Right are the fast steps. Text fields (and selects) keep their own keys.
+onkeydown=e=>{if(/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName))return;const a=NC.keyAction(e);if(!a)return;
+ if(a==='fastBack'||a==='fastFwd')e.preventDefault(); // PageUp / PageDown would also scroll the panel
+ if(a==='back')nav.b1();else if(a==='fwd')nav.b2();else if(a==='fastBack')nav.br5();else if(a==='fastFwd')nav.bf5();else if(a==='varUp'){sel=Math.max(0,sel-1);panel()}else if(a==='varDown'){sel=Math.min(cur.c.length-1,sel+1);panel()}else if(a==='home')nav.b0();else if(a==='end')nav.b3()};
 // ---- 库 ----
 function open_(c){col=c;tree=parse(c.sgf);view=bbox(tree);c.vb=((tree.p.PC||[''])[0].match(/BV\w+/g))||c.videos.map(v=>v.bvid);$('ti').textContent=c.name;$('vd').innerHTML=c.videos.map((v,i)=>`<div><a target="_blank" href="https://www.bilibili.com/video/${v.bvid}">▶ ${v.title}</a></div>`).join('');go(tree);document.querySelectorAll('#list div').forEach(d=>d.classList.toggle('on',d.dataset.id===c.id))}
 function renderList(){const q=$('q').value.trim(),s=$('src').value,box=$('list');box.innerHTML='';let ser='';
