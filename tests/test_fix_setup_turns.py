@@ -100,7 +100,8 @@ def test_apply_redoes_only_the_wrong_nodes_and_keeps_everything_else(work, capsy
     assert read_json(os.path.join(bk, "g_toy-group.a2.json")) == old
     assert not [f for f in os.listdir(work) if ".tmp." in f]
     rep = read_json(os.path.join(bk, "fix_setup_turns_report.json"))
-    assert rep["groups"][0]["group"] == "toy-group" and {n["node"] for n in rep["groups"][0]["nodes"]} == {1, 7}
+    group = rep["runs"][0]["groups"][0]
+    assert group["group"] == "toy-group" and {n["node"] for n in group["nodes"]} == {1, 7}
 
 
 def test_second_run_finds_nothing_to_do(work, capsys):

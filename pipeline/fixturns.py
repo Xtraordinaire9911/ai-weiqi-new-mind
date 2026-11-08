@@ -244,8 +244,10 @@ def apply_plans(plans, backup_dir, out):
     finally:
         eng.close()
         errf.close()
-    if report:
-        atomic_write_json(os.path.join(backup_dir, 'fix_setup_turns_report.json'), {'time': time.strftime('%Y-%m-%d %H:%M:%S'), 'groups': report}, ensure_ascii=False, indent=1)
+    if report:   # what changed, kept next to the backups; a later run adds to it instead of replacing it
+        rp = os.path.join(backup_dir, 'fix_setup_turns_report.json')
+        old = read_json(rp, default={})
+        atomic_write_json(rp, {'runs': (old.get('runs') or []) + [{'time': time.strftime('%Y-%m-%d %H:%M:%S'), 'groups': report}]}, ensure_ascii=False, indent=1)
     return rc, changed
 
 
